@@ -137,42 +137,9 @@ func (e *Engine) RunRequest(ctx context.Context, sessionID model.ID, requestID m
 		return model.ResponseData{}, err
 	}
 
-	req, err := e.Store.GetRequest(requestID)
+	req, resolved, err := e.resolveAndAuthorize(ctx, requestID, environmentID, origin)
 	if err != nil {
-		return model.ResponseData{}, fmt.Errorf("load request: %w", err)
-	}
-
-	var env *model.Environment
-	if environmentID != "" {
-		env, err = e.Store.GetEnvironment(environmentID)
-		if err != nil {
-			return model.ResponseData{}, fmt.Errorf("load environment: %w", err)
-		}
-	}
-
-	resolved, err := e.Templater.Resolve(ctx, req, env, responseLookupFromStore{e.Store})
-	if err != nil {
-		return model.ResponseData{}, fmt.Errorf("resolve templates: %w", err)
-	}
-
-	if req.Auth != nil && req.Auth.Kind != model.AuthNone {
-		resolved, err = e.Auth.Apply(ctx, *req.Auth, resolved)
-		if err != nil {
-			return model.ResponseData{}, fmt.Errorf("apply auth: %w", err)
-		}
-	}
-
-	decision, err := e.Policy.Authorize(ctx, DispatchContext{
-		Origin:    origin,
-		RequestID: requestID,
-		Method:    resolved.Method,
-		URL:       resolved.URL,
-	})
-	if err != nil {
-		return model.ResponseData{}, fmt.Errorf("policy check: %w", err)
-	}
-	if !decision.Allow {
-		return model.ResponseData{}, fmt.Errorf("blocked by policy: %s", decision.Reason)
+		return model.ResponseData{}, err
 	}
 
 	protocol, ok := e.Protocols[req.Protocol]
@@ -204,6 +171,64 @@ func (e *Engine) RunRequest(ctx context.Context, sessionID model.ID, requestID m
 	})
 
 	return resp, nil
+}
+
+// resolveAndAuthorize runs the shared front half of any execution: load the
+// request + environment, expand templates, apply auth, and pass through the
+// Dispatch policy chokepoint. Both RunRequest and RunPerf (via
+// ResolveForExecution) go through this, so a load test hits the exact same
+// resolved URL/headers/auth a normal send would, and is gated by the same
+// policy.
+func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, environmentID model.ID, origin string) (model.RequestDef, ResolvedRequest, error) {
+	req, err := e.Store.GetRequest(requestID)
+	if err != nil {
+		return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("load request: %w", err)
+	}
+
+	var env *model.Environment
+	if environmentID != "" {
+		env, err = e.Store.GetEnvironment(environmentID)
+		if err != nil {
+			return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("load environment: %w", err)
+		}
+	}
+
+	resolved, err := e.Templater.Resolve(ctx, req, env, responseLookupFromStore{e.Store})
+	if err != nil {
+		return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("resolve templates: %w", err)
+	}
+
+	if req.Auth != nil && req.Auth.Kind != model.AuthNone {
+		resolved, err = e.Auth.Apply(ctx, *req.Auth, resolved)
+		if err != nil {
+			return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("apply auth: %w", err)
+		}
+	}
+
+	decision, err := e.Policy.Authorize(ctx, DispatchContext{
+		Origin:      origin,
+		RequestID:   requestID,
+		Method:      resolved.Method,
+		URL:         resolved.URL,
+		Environment: environmentID,
+	})
+	if err != nil {
+		return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("policy check: %w", err)
+	}
+	if !decision.Allow {
+		return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("blocked by policy: %s", decision.Reason)
+	}
+
+	return req, resolved, nil
+}
+
+// ResolveForExecution exposes the resolve+auth+authorize front half for
+// consumers that execute a request outside the Protocol path — notably the
+// k6 perf runner, which needs the fully-resolved URL/headers/body to generate
+// its load script but runs it in a separate process. Same policy chokepoint,
+// origin recorded for the audit trail.
+func (e *Engine) ResolveForExecution(ctx context.Context, requestID model.ID, environmentID model.ID, origin string) (model.RequestDef, ResolvedRequest, error) {
+	return e.resolveAndAuthorize(ctx, requestID, environmentID, origin)
 }
 
 type responseLookupFromStore struct{ store Store }

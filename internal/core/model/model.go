@@ -127,7 +127,10 @@ type RequestDef struct {
 	Params      []KeyValue   `yaml:"params,omitempty" json:"params"`
 	Body        *RequestBody `yaml:"body,omitempty" json:"body"`
 	Auth        *AuthConfig  `yaml:"auth,omitempty" json:"authRef"`
-	OrderKey    string       `yaml:"orderKey" json:"orderKey"`
+	// Perf is the optional load-test config attached to this request, versioned
+	// with it in the same YAML file (see internal/core/model/perf.go).
+	Perf     *PerfConfig `yaml:"perf,omitempty" json:"perf,omitempty"`
+	OrderKey string      `yaml:"orderKey" json:"orderKey"`
 }
 
 type Environment struct {

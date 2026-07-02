@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/google/uuid"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"apitool/internal/auth"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
 	"apitool/internal/importer"
+	"apitool/internal/perf"
 	graphqlprotocol "apitool/internal/protocols/graphql"
 	grpcprotocol "apitool/internal/protocols/grpc"
 	httpprotocol "apitool/internal/protocols/http"
@@ -29,6 +32,10 @@ type App struct {
 	ctx    context.Context
 	store  *storage.FileStore
 	engine *core.Engine
+
+	// perfCancels lets StopPerfTest cancel an in-flight k6 run by request id.
+	perfMu      sync.Mutex
+	perfCancels map[string]context.CancelFunc
 }
 
 func NewApp() *App {
@@ -52,7 +59,7 @@ func NewApp() *App {
 	engine.RegisterProtocol(graphqlprotocol.New())
 	engine.RegisterProtocol(grpcprotocol.New())
 
-	app := &App{store: store, engine: engine}
+	app := &App{store: store, engine: engine, perfCancels: map[string]context.CancelFunc{}}
 	app.seedDemoData()
 	return app
 }
@@ -193,4 +200,73 @@ func (a *App) GetSettings() model.AppSettings {
 // UpdateSettings persists app-level preferences.
 func (a *App) UpdateSettings(s model.AppSettings) error {
 	return storage.SaveSettings(storage.DefaultSettingsPath(), s)
+}
+
+// CheckK6 returns "" if a k6 binary is resolvable, or a human-readable reason
+// it isn't, so the perf UI can tell the user to install/bundle k6 before they
+// configure a whole load test.
+func (a *App) CheckK6() string {
+	if _, err := perf.ResolveK6(); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// wailsPerfSink forwards coalesced (≤1/sec) perf sample points to the webview
+// as Wails events. At this rate direct EventsEmit is safe — the
+// high-frequency-stream caveat in docs/02-architecture.md §6 applies to
+// per-frame WS/gRPC data, not to metrics the backend already bucketed to one
+// point per second.
+type wailsPerfSink struct {
+	ctx       context.Context
+	requestID string
+}
+
+func (s wailsPerfSink) Emit(e core.Event) {
+	if e.Kind != "perf" {
+		return
+	}
+	wailsruntime.EventsEmit(s.ctx, "perf:sample:"+s.requestID, string(e.Payload))
+}
+
+// RunPerfTest runs a k6 load test against a request, streaming live per-second
+// samples to the webview via "perf:sample:<requestID>" events and returning
+// the authoritative end-of-test result. The request is resolved through the
+// same template + auth + policy path as a normal send (origin "gui"), so the
+// load test hits exactly what the user sees.
+func (a *App) RunPerfTest(requestID string, environmentID string, cfg model.PerfConfig) (model.PerfResult, error) {
+	runner, err := perf.NewRunner()
+	if err != nil {
+		return model.PerfResult{RequestID: requestID, Error: err.Error()}, err
+	}
+
+	_, resolved, err := a.engine.ResolveForExecution(a.ctx, requestID, environmentID, "gui")
+	if err != nil {
+		return model.PerfResult{RequestID: requestID, Error: err.Error()}, err
+	}
+
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.perfMu.Lock()
+	a.perfCancels[requestID] = cancel
+	a.perfMu.Unlock()
+	defer func() {
+		cancel()
+		a.perfMu.Lock()
+		delete(a.perfCancels, requestID)
+		a.perfMu.Unlock()
+	}()
+
+	return runner.Run(ctx, requestID, resolved, cfg, wailsPerfSink{ctx: a.ctx, requestID: requestID})
+}
+
+// StopPerfTest cancels an in-flight load test for a request (the Cancel
+// button). k6 receives a kill; the partial result is still returned by the
+// pending RunPerfTest call.
+func (a *App) StopPerfTest(requestID string) {
+	a.perfMu.Lock()
+	cancel := a.perfCancels[requestID]
+	a.perfMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
