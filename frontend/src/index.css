@@ -2,16 +2,89 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Semantic color tokens — the single source of truth for theming.
+ * Components never use raw palette classes (neutral-800, emerald-400...);
+ * they use the semantic names mapped in tailwind.config.js (bg-app,
+ * text-ink, border-edge, ...). Adding a theme = adding one block here.
+ * Values are space-separated RGB so Tailwind's <alpha-value> works
+ * (e.g. bg-danger-bg/60).
+ */
 :root {
   color-scheme: dark;
+
+  /* surfaces, lowest to highest */
+  --color-app: 10 10 10; /* window background */
+  --color-surface: 18 18 20; /* sidebar, panels */
+  --color-field: 23 23 23; /* inputs, selects, modal bodies */
+  --color-raised: 38 38 38; /* hover states, chips */
+  --color-elevated: 64 64 64; /* active chips, pressed */
+
+  /* borders */
+  --color-edge: 38 38 38;
+  --color-edge-strong: 64 64 64;
+  --color-edge-soft: 23 23 23;
+
+  /* text, highest to lowest emphasis */
+  --color-ink: 245 245 245;
+  --color-ink-dim: 212 212 212;
+  --color-ink-muted: 115 115 115;
+  --color-ink-faint: 82 82 82;
+
+  /* accent (brand / primary action) */
+  --color-accent: 5 150 105;
+  --color-accent-hover: 16 185 129;
+  --color-accent-fg: 52 211 153; /* accent-colored text on app bg */
+  --color-accent-contrast: 255 255 255; /* text on accent bg */
+
+  /* status */
+  --color-danger: 248 113 113;
+  --color-danger-bg: 69 10 10;
+  --color-danger-edge: 127 29 29;
+  --color-warn: 251 191 36;
+  --color-warn-edge: 120 53 15;
+  --color-info: 56 189 248;
 }
 
-html, body, #root {
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-app: 255 255 255;
+  --color-surface: 250 250 250;
+  --color-field: 245 245 245;
+  --color-raised: 229 229 229;
+  --color-elevated: 212 212 212;
+
+  --color-edge: 229 229 229;
+  --color-edge-strong: 212 212 212;
+  --color-edge-soft: 245 245 245;
+
+  --color-ink: 23 23 23;
+  --color-ink-dim: 64 64 64;
+  --color-ink-muted: 115 115 115;
+  --color-ink-faint: 163 163 163;
+
+  --color-accent: 5 150 105;
+  --color-accent-hover: 4 120 87;
+  --color-accent-fg: 4 120 87;
+  --color-accent-contrast: 255 255 255;
+
+  --color-danger: 220 38 38;
+  --color-danger-bg: 254 226 226;
+  --color-danger-edge: 254 202 202;
+  --color-warn: 217 119 6;
+  --color-warn-edge: 253 230 138;
+  --color-info: 2 132 199;
+}
+
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
 }
 
 body {
-  @apply bg-neutral-950 text-neutral-100 antialiased;
+  @apply bg-app text-ink antialiased;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }

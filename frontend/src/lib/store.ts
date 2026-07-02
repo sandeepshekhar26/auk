@@ -39,6 +39,7 @@ export const [environmentEditorOpen, setEnvironmentEditorOpen] = createSignal(fa
 export const [importModalOpen, setImportModalOpen] = createSignal(false)
 export const [shortcutSheetOpen, setShortcutSheetOpen] = createSignal(false)
 export const [streamConsoleOpen, setStreamConsoleOpen] = createSignal(false)
+export const [settingsOpen, setSettingsOpen] = createSignal(false)
 
 export function openTab(requestId: string) {
   setAppState('openTabIds', (ids) => (ids.includes(requestId) ? ids : [...ids, requestId]))

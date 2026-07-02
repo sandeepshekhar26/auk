@@ -198,14 +198,14 @@ export default function EnvironmentEditor() {
         onClick={close}
       >
         <div
-          class="flex h-[32rem] w-full max-w-3xl overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-2xl"
+          class="flex h-[32rem] w-full max-w-3xl overflow-hidden rounded-lg border border-edge-strong bg-field shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
-          <div class="flex w-56 flex-col border-r border-neutral-800 bg-neutral-925">
-            <div class="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
-              <span class="text-xs font-semibold uppercase tracking-wide text-neutral-500">Environments</span>
+          <div class="flex w-56 flex-col border-r border-edge bg-surface">
+            <div class="flex items-center justify-between border-b border-edge px-3 py-2">
+              <span class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Environments</span>
               <button
-                class="rounded px-1.5 py-0.5 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                class="rounded px-1.5 py-0.5 text-sm text-ink-muted hover:bg-raised hover:text-ink"
                 onClick={createEnvironment}
                 title="New environment"
               >
@@ -215,14 +215,14 @@ export default function EnvironmentEditor() {
             <div class="flex-1 overflow-y-auto py-1">
               <For
                 each={workspaceEnvironments()}
-                fallback={<p class="px-3 py-3 text-xs text-neutral-600">No environments yet</p>}
+                fallback={<p class="px-3 py-3 text-xs text-ink-faint">No environments yet</p>}
               >
                 {(env) => (
                   <button
                     class="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm"
                     classList={{
-                      'bg-neutral-800 text-neutral-100': selectedId() === env.id,
-                      'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200': selectedId() !== env.id,
+                      'bg-raised text-ink': selectedId() === env.id,
+                      'text-ink-muted hover:bg-raised/60 hover:text-ink': selectedId() !== env.id,
                     }}
                     onClick={() => {
                       setSelectedId(env.id)
@@ -230,7 +230,7 @@ export default function EnvironmentEditor() {
                     }}
                   >
                     <span class="truncate">{env.name}</span>
-                    <span class="ml-2 text-xs text-neutral-600">{env.variables.length}</span>
+                    <span class="ml-2 text-xs text-ink-faint">{env.variables.length}</span>
                   </button>
                 )}
               </For>
@@ -238,10 +238,10 @@ export default function EnvironmentEditor() {
           </div>
 
           <div class="flex flex-1 flex-col">
-            <div class="flex items-center justify-between border-b border-neutral-800 px-4 py-2">
-              <span class="text-sm font-medium text-neutral-200">Manage environments</span>
+            <div class="flex items-center justify-between border-b border-edge px-4 py-2">
+              <span class="text-sm font-medium text-ink">Manage environments</span>
               <button
-                class="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
+                class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
                 onClick={close}
               >
                 Close (Esc)
@@ -251,10 +251,10 @@ export default function EnvironmentEditor() {
             <Show
               when={selected()}
               fallback={
-                <div class="flex flex-1 flex-col items-center justify-center gap-2 text-neutral-600">
+                <div class="flex flex-1 flex-col items-center justify-center gap-2 text-ink-faint">
                   <p class="text-sm">No environment selected</p>
                   <button
-                    class="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500"
+                    class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
                     onClick={createEnvironment}
                   >
                     Create environment
@@ -264,15 +264,15 @@ export default function EnvironmentEditor() {
             >
               {(env) => (
                 <div class="flex flex-1 flex-col overflow-hidden">
-                  <div class="flex items-center gap-2 border-b border-neutral-800 px-4 py-2">
+                  <div class="flex items-center gap-2 border-b border-edge px-4 py-2">
                     <input
-                      class="flex-1 rounded bg-neutral-900 px-2 py-1 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+                      class="flex-1 rounded bg-field px-2 py-1 text-sm text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
                       value={env().name}
                       onInput={(e) => renameEnvironment(env().id, e.currentTarget.value)}
                       placeholder="Environment name"
                     />
                     <button
-                      class="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-950/40"
+                      class="rounded px-2 py-1 text-xs text-danger hover:bg-danger-bg/40"
                       onClick={() => deleteEnvironment(env().id)}
                     >
                       Delete
@@ -281,15 +281,15 @@ export default function EnvironmentEditor() {
 
                   <div class="flex-1 overflow-y-auto px-4 py-3">
                     <div class="grid grid-cols-[1fr_1fr_auto_auto] items-center gap-x-2 gap-y-1.5 text-xs">
-                      <span class="text-neutral-500">Key</span>
-                      <span class="text-neutral-500">Value</span>
-                      <span class="text-neutral-500">Secret</span>
+                      <span class="text-ink-muted">Key</span>
+                      <span class="text-ink-muted">Value</span>
+                      <span class="text-ink-muted">Secret</span>
                       <span />
                       <For each={env().variables}>
                         {(v, i) => (
                           <>
                             <input
-                              class="rounded bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+                              class="rounded bg-field px-2 py-1 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
                               value={v.key}
                               placeholder="VAR_NAME"
                               onInput={(e) => renameVariableKey(env().id, i(), v.key, e.currentTarget.value)}
@@ -298,7 +298,7 @@ export default function EnvironmentEditor() {
                               when={isSecret(env(), v.key)}
                               fallback={
                                 <input
-                                  class="rounded bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+                                  class="rounded bg-field px-2 py-1 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
                                   value={v.value}
                                   placeholder="value"
                                   onInput={(e) => updateVariable(env().id, i(), { value: e.currentTarget.value })}
@@ -307,7 +307,7 @@ export default function EnvironmentEditor() {
                             >
                               <input
                                 type="password"
-                                class="rounded border border-amber-900/40 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:outline-none focus:ring-1 focus:ring-amber-700"
+                                class="rounded border border-warn-edge/40 bg-field px-2 py-1 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-warn-edge"
                                 value={secretValues()[secretKey(env().id, v.key)] ?? ''}
                                 placeholder="secret value (kept out of the file)"
                                 onInput={(e) => updateSecretValue(env().id, v.key, e.currentTarget.value)}
@@ -316,13 +316,13 @@ export default function EnvironmentEditor() {
                             <label class="flex items-center justify-center" title="Store in OS keychain, not in plain text">
                               <input
                                 type="checkbox"
-                                class="accent-emerald-600"
+                                class="accent-accent"
                                 checked={isSecret(env(), v.key)}
                                 onChange={(e) => toggleSecret(env().id, i(), e.currentTarget.checked)}
                               />
                             </label>
                             <button
-                              class="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-red-400"
+                              class="rounded px-1.5 py-1 text-xs text-ink-muted hover:bg-raised hover:text-danger"
                               onClick={() => removeVariable(env().id, i())}
                               title="Remove variable"
                             >
@@ -334,27 +334,27 @@ export default function EnvironmentEditor() {
                     </div>
 
                     <button
-                      class="mt-3 rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                      class="mt-3 rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
                       onClick={() => addVariable(env().id)}
                     >
                       + Add variable
                     </button>
 
                     <Show when={env().secrets.length > 0}>
-                      <p class="mt-3 text-xs text-neutral-600">
+                      <p class="mt-3 text-xs text-ink-faint">
                         Secret values are never written into the environment file — they're sent to the OS
                         keychain when you save, keyed by variable name.
                       </p>
                     </Show>
                   </div>
 
-                  <div class="flex items-center justify-between border-t border-neutral-800 px-4 py-2">
+                  <div class="flex items-center justify-between border-t border-edge px-4 py-2">
                     <Show when={error()}>
-                      <span class="text-xs text-red-400">{error()}</span>
+                      <span class="text-xs text-danger">{error()}</span>
                     </Show>
                     <div class="ml-auto flex items-center gap-2">
                       <button
-                        class="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                        class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
                         disabled={saving()}
                         onClick={() => save(env().id)}
                       >

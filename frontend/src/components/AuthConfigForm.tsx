@@ -14,14 +14,14 @@ const AUTH_KINDS: { value: AuthKind; label: string }[] = [
 function Field(props: { label: string; children: any }) {
   return (
     <label class="flex flex-col gap-1">
-      <span class="text-[10px] font-semibold uppercase tracking-wide text-neutral-600">{props.label}</span>
+      <span class="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">{props.label}</span>
       {props.children}
     </label>
   )
 }
 
 const inputClass =
-  'rounded bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-neutral-600'
+  'rounded bg-field px-2 py-1 font-mono text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-edge-strong'
 
 export default function AuthConfigForm(props: { requestIndex: number }) {
   const req = () => appState.requests[props.requestIndex]
@@ -86,7 +86,7 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
       </Field>
 
       <Show when={auth().kind === 'none'}>
-        <p class="mt-3 text-xs text-neutral-600">This request does not send any authorization.</p>
+        <p class="mt-3 text-xs text-ink-faint">This request does not send any authorization.</p>
       </Show>
 
       <Show when={auth().kind === 'basic'}>
@@ -204,7 +204,7 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
               onInput={(e) => setOAuth2('tokenUrl', e.currentTarget.value)}
             />
           </Field>
-          <p class="text-[11px] text-neutral-600">Client-credentials grant only. Scopes editing coming later.</p>
+          <p class="text-[11px] text-ink-faint">Client-credentials grant only. Scopes editing coming later.</p>
         </div>
       </Show>
     </div>

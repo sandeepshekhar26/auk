@@ -85,16 +85,13 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
           EditorState.readOnly.of(true),
           syntaxHighlighting(defaultHighlightStyle),
           ...(isJsonView ? [json()] : []),
-          EditorView.theme(
-            {
-              '&': { backgroundColor: 'transparent', height: '100%', fontSize: '12px' },
-              '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, monospace', overflow: 'auto' },
-              '.cm-gutters': { backgroundColor: 'transparent', color: '#525252', border: 'none' },
-              '.cm-content': { caretColor: 'transparent' },
-              '&.cm-focused': { outline: 'none' },
-            },
-            { dark: true },
-          ),
+          EditorView.theme({
+            '&': { backgroundColor: 'transparent', height: '100%', fontSize: '12px' },
+            '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, monospace', overflow: 'auto' },
+            '.cm-gutters': { backgroundColor: 'transparent', color: 'rgb(var(--color-ink-faint))', border: 'none' },
+            '.cm-content': { caretColor: 'transparent' },
+            '&.cm-focused': { outline: 'none' },
+          }),
         ],
       }),
       parent: editorHost,
@@ -118,26 +115,26 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   }
 
   return (
-    <div class="flex h-full flex-col border-l border-neutral-800">
-      <Show when={!props.loading} fallback={<div class="p-3 text-sm text-neutral-500">Sending…</div>}>
-        <Show when={props.response} fallback={<div class="p-3 text-sm text-neutral-600">Response will appear here.</div>}>
+    <div class="flex h-full flex-col border-l border-edge">
+      <Show when={!props.loading} fallback={<div class="p-3 text-sm text-ink-muted">Sending…</div>}>
+        <Show when={props.response} fallback={<div class="p-3 text-sm text-ink-faint">Response will appear here.</div>}>
           {(res) => (
             <div class="flex h-full flex-col">
-              <div class="flex items-center gap-3 border-b border-neutral-800 p-2 text-xs">
+              <div class="flex items-center gap-3 border-b border-edge p-2 text-xs">
                 <span
                   class="font-mono font-semibold"
                   classList={{
-                    'text-emerald-400': res().status < 300,
-                    'text-amber-400': res().status >= 300 && res().status < 400,
-                    'text-red-400': res().status >= 400,
+                    'text-accent-fg': res().status < 300,
+                    'text-warn': res().status >= 300 && res().status < 400,
+                    'text-danger': res().status >= 400,
                   }}
                 >
                   {res().status} {res().statusText}
                 </span>
-                <span class="text-neutral-500">{res().timingMs}ms</span>
-                <span class="text-neutral-500">{res().bodySize}B</span>
+                <span class="text-ink-muted">{res().timingMs}ms</span>
+                <span class="text-ink-muted">{res().bodySize}B</span>
                 <button
-                  class="ml-auto rounded bg-neutral-900 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  class="ml-auto rounded bg-field px-2 py-1 text-[11px] text-ink-dim hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={!activeRequest()}
                   onClick={copyAsCurl}
                   title="Copy as cURL"
@@ -146,12 +143,12 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 </button>
               </div>
 
-              <div class="flex items-center gap-1 border-b border-neutral-800 px-2 py-1">
+              <div class="flex items-center gap-1 border-b border-edge px-2 py-1">
                 <button
                   class="rounded px-2 py-1 text-xs font-medium"
                   classList={{
-                    'bg-neutral-800 text-neutral-100': tab() === 'body',
-                    'text-neutral-500 hover:text-neutral-300': tab() !== 'body',
+                    'bg-raised text-ink': tab() === 'body',
+                    'text-ink-muted hover:text-ink-dim': tab() !== 'body',
                   }}
                   onClick={() => setTab('body')}
                 >
@@ -160,22 +157,22 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 <button
                   class="rounded px-2 py-1 text-xs font-medium"
                   classList={{
-                    'bg-neutral-800 text-neutral-100': tab() === 'headers',
-                    'text-neutral-500 hover:text-neutral-300': tab() !== 'headers',
+                    'bg-raised text-ink': tab() === 'headers',
+                    'text-ink-muted hover:text-ink-dim': tab() !== 'headers',
                   }}
                   onClick={() => setTab('headers')}
                 >
                   Headers
-                  <span class="ml-1 text-neutral-600">{res().headers.length}</span>
+                  <span class="ml-1 text-ink-faint">{res().headers.length}</span>
                 </button>
 
                 <Show when={tab() === 'body' && jsonInfo().isJson}>
-                  <div class="ml-auto flex items-center gap-1 rounded bg-neutral-900 p-0.5">
+                  <div class="ml-auto flex items-center gap-1 rounded bg-field p-0.5">
                     <button
                       class="rounded px-2 py-0.5 text-[11px]"
                       classList={{
-                        'bg-neutral-700 text-neutral-100': bodyMode() === 'pretty',
-                        'text-neutral-500 hover:text-neutral-300': bodyMode() !== 'pretty',
+                        'bg-elevated text-ink': bodyMode() === 'pretty',
+                        'text-ink-muted hover:text-ink-dim': bodyMode() !== 'pretty',
                       }}
                       onClick={() => setBodyMode('pretty')}
                     >
@@ -184,8 +181,8 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                     <button
                       class="rounded px-2 py-0.5 text-[11px]"
                       classList={{
-                        'bg-neutral-700 text-neutral-100': bodyMode() === 'raw',
-                        'text-neutral-500 hover:text-neutral-300': bodyMode() !== 'raw',
+                        'bg-elevated text-ink': bodyMode() === 'raw',
+                        'text-ink-muted hover:text-ink-dim': bodyMode() !== 'raw',
                       }}
                       onClick={() => setBodyMode('raw')}
                     >
@@ -198,7 +195,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
               <div class="flex-1 overflow-hidden" classList={{ hidden: tab() !== 'body' }}>
                 <Show
                   when={displayText().length > 0}
-                  fallback={<div class="p-3 text-sm text-neutral-600">Empty response body.</div>}
+                  fallback={<div class="p-3 text-sm text-ink-faint">Empty response body.</div>}
                 >
                   <div ref={editorHost} class="h-full overflow-auto" />
                 </Show>
@@ -208,14 +205,14 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 <div class="flex-1 overflow-auto p-2">
                   <Show
                     when={res().headers.length > 0}
-                    fallback={<div class="p-1 text-sm text-neutral-600">No headers.</div>}
+                    fallback={<div class="p-1 text-sm text-ink-faint">No headers.</div>}
                   >
                     <table class="w-full border-collapse text-xs">
                       <tbody>
                         {res().headers.map((h) => (
-                          <tr class="border-b border-neutral-900">
-                            <td class="w-1/3 whitespace-nowrap py-1.5 pr-3 align-top font-mono text-neutral-500">{h.key}</td>
-                            <td class="break-all py-1.5 font-mono text-neutral-300">{h.value}</td>
+                          <tr class="border-b border-edge-soft">
+                            <td class="w-1/3 whitespace-nowrap py-1.5 pr-3 align-top font-mono text-ink-muted">{h.key}</td>
+                            <td class="break-all py-1.5 font-mono text-ink-dim">{h.value}</td>
                           </tr>
                         ))}
                       </tbody>

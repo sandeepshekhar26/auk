@@ -9,16 +9,13 @@ import KeyValueTable from './KeyValueTable'
 
 const BODY_KINDS: BodyKind[] = ['none', 'json', 'text', 'form', 'graphql', 'binary']
 
-const editorTheme = EditorView.theme(
-  {
-    '&': { height: '100%', fontSize: '12px', backgroundColor: 'transparent' },
-    '.cm-scroller': { fontFamily: '"JetBrains Mono", ui-monospace, monospace', overflow: 'auto' },
-    '.cm-content': { caretColor: '#34d399' },
-    '.cm-gutters': { backgroundColor: 'transparent', color: '#525252', border: 'none' },
-    '&.cm-focused': { outline: 'none' },
-  },
-  { dark: true },
-)
+const editorTheme = EditorView.theme({
+  '&': { height: '100%', fontSize: '12px', backgroundColor: 'transparent' },
+  '.cm-scroller': { fontFamily: '"JetBrains Mono", ui-monospace, monospace', overflow: 'auto' },
+  '.cm-content': { caretColor: 'rgb(var(--color-accent-fg))' },
+  '.cm-gutters': { backgroundColor: 'transparent', color: 'rgb(var(--color-ink-faint))', border: 'none' },
+  '&.cm-focused': { outline: 'none' },
+})
 
 // JSON body editor backed by CodeMirror 6. Kept isolated from Solid's
 // reactivity for the actual keystrokes (CodeMirror owns its own document)
@@ -106,10 +103,10 @@ export default function BodyEditor(props: { requestIndex: number }) {
 
   return (
     <div class="flex h-full flex-col">
-      <div class="flex items-center gap-2 border-b border-neutral-800 px-2 py-1.5">
-        <span class="text-[10px] font-semibold uppercase tracking-wide text-neutral-600">Body type</span>
+      <div class="flex items-center gap-2 border-b border-edge px-2 py-1.5">
+        <span class="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">Body type</span>
         <select
-          class="rounded bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+          class="rounded bg-field px-2 py-1 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
           value={body().kind}
           onChange={(e) => setKind(e.currentTarget.value as BodyKind)}
         >
@@ -124,7 +121,7 @@ export default function BodyEditor(props: { requestIndex: number }) {
         </Show>
         <Show when={body().kind === 'text' || body().kind === 'graphql'}>
           <textarea
-            class="h-full w-full resize-none bg-transparent p-3 font-mono text-xs text-neutral-200 focus:outline-none"
+            class="h-full w-full resize-none bg-transparent p-3 font-mono text-xs text-ink focus:outline-none"
             placeholder={body().kind === 'graphql' ? 'query { ... }' : 'Raw body text'}
             value={body().text ?? ''}
             onInput={(e) => setAppState('requests', props.requestIndex, 'body', 'text', e.currentTarget.value)}
@@ -143,10 +140,10 @@ export default function BodyEditor(props: { requestIndex: number }) {
           </div>
         </Show>
         <Show when={body().kind === 'none'}>
-          <div class="flex h-full items-center justify-center text-xs text-neutral-600">This request has no body.</div>
+          <div class="flex h-full items-center justify-center text-xs text-ink-faint">This request has no body.</div>
         </Show>
         <Show when={body().kind === 'binary'}>
-          <div class="flex h-full items-center justify-center text-xs text-neutral-600">
+          <div class="flex h-full items-center justify-center text-xs text-ink-faint">
             Binary body editing is not supported yet — use a file reference via the CLI/config for now.
           </div>
         </Show>

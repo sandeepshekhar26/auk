@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
-import { appState, commandPaletteOpen, setCommandPaletteOpen, openTab, setShortcutSheetOpen } from '../lib/store'
+import { appState, commandPaletteOpen, setCommandPaletteOpen, openTab, setShortcutSheetOpen, setSettingsOpen } from '../lib/store'
 import { createRequest } from '../lib/data'
+import { setTheme } from '../lib/theme'
 import type { CommandItem } from '../types'
 
 export default function CommandPalette() {
@@ -15,6 +16,31 @@ export default function CommandPalette() {
         subtitle: '⌘N',
         group: 'action',
         run: () => void createRequest(),
+      },
+      {
+        id: 'action:open-settings',
+        title: 'Open Settings',
+        subtitle: '⌘,',
+        group: 'action',
+        run: () => setSettingsOpen(true),
+      },
+      {
+        id: 'action:theme-system',
+        title: 'Theme: System',
+        group: 'action',
+        run: () => setTheme('system'),
+      },
+      {
+        id: 'action:theme-light',
+        title: 'Theme: Light',
+        group: 'action',
+        run: () => setTheme('light'),
+      },
+      {
+        id: 'action:theme-dark',
+        title: 'Theme: Dark',
+        group: 'action',
+        run: () => setTheme('dark'),
       },
     ]
     const requestItems: CommandItem[] = appState.requests.map((r) => ({
@@ -54,29 +80,29 @@ export default function CommandPalette() {
     <Show when={commandPaletteOpen()}>
       <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-32" onClick={close}>
         <div
-          class="w-full max-w-lg overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-2xl"
+          class="w-full max-w-lg overflow-hidden rounded-lg border border-edge-strong bg-field shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           <input
             ref={inputRef}
             autofocus
-            class="w-full border-b border-neutral-800 bg-transparent px-4 py-3 text-sm text-neutral-100 focus:outline-none"
+            class="w-full border-b border-edge bg-transparent px-4 py-3 text-sm text-ink focus:outline-none"
             placeholder="Jump to a request, run a command…"
             value={query()}
             onInput={(e) => setQuery(e.currentTarget.value)}
           />
           <div class="max-h-80 overflow-y-auto py-1">
-            <For each={items()} fallback={<p class="px-4 py-3 text-sm text-neutral-600">No matches</p>}>
+            <For each={items()} fallback={<p class="px-4 py-3 text-sm text-ink-faint">No matches</p>}>
               {(item) => (
                 <button
-                  class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-neutral-300 hover:bg-neutral-800"
+                  class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-ink-dim hover:bg-raised"
                   onClick={() => {
                     item.run()
                     close()
                   }}
                 >
                   <span>{item.title}</span>
-                  <span class="text-xs text-neutral-600">{item.subtitle}</span>
+                  <span class="text-xs text-ink-faint">{item.subtitle}</span>
                 </button>
               )}
             </For>

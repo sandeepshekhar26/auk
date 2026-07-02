@@ -179,3 +179,18 @@ func (a *App) CreateEnvironment(env model.Environment, secretValues map[string]s
 func (a *App) UpdateEnvironment(env model.Environment, secretValues map[string]string) error {
 	return a.store.PutEnvironment(env, secretValues)
 }
+
+// GetSettings returns app-level preferences (theme, ...). A missing
+// settings file is a normal first run and yields defaults.
+func (a *App) GetSettings() model.AppSettings {
+	s, err := storage.LoadSettings(storage.DefaultSettingsPath())
+	if err != nil {
+		return model.AppSettings{Theme: "system"}
+	}
+	return s
+}
+
+// UpdateSettings persists app-level preferences.
+func (a *App) UpdateSettings(s model.AppSettings) error {
+	return storage.SaveSettings(storage.DefaultSettingsPath(), s)
+}

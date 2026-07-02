@@ -1,6 +1,7 @@
 import { Show, createSignal } from 'solid-js'
-import { setAppState, importModalOpen, setImportModalOpen, openTab } from '../lib/store'
-import { wails } from '../lib/wails'
+import { appState, importModalOpen, setImportModalOpen, openTab } from '../lib/store'
+import { models, wails } from '../lib/wails'
+import { loadWorkspaceData } from '../lib/data'
 import type { RequestDef } from '../types'
 
 export default function ImportCurlModal() {
@@ -37,8 +38,19 @@ export default function ImportCurlModal() {
       if (!parsed) {
         parsed = (await wails.ImportCurl(raw().trim())) as unknown as RequestDef
       }
-      setAppState('requests', (reqs) => [...reqs, parsed as RequestDef])
-      openTab(parsed.id)
+      // ImportCurl only parses — it does not persist. Fill in the workspace
+      // scoping the parser can't know about, persist through the same
+      // CreateRequest path as the "+ New Request" flow, then reload from the
+      // backend so the store reflects what's actually on disk.
+      const req: RequestDef = {
+        ...parsed,
+        id: parsed.id || crypto.randomUUID(),
+        workspaceId: appState.activeWorkspaceId ?? parsed.workspaceId,
+        name: parsed.name || `${parsed.method} ${parsed.url}`,
+      }
+      await wails.CreateRequest(models.RequestDef.createFrom(req))
+      if (appState.activeWorkspaceId) await loadWorkspaceData(appState.activeWorkspaceId)
+      openTab(req.id)
       close()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -51,12 +63,12 @@ export default function ImportCurlModal() {
     <Show when={importModalOpen()}>
       <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-24" onClick={close}>
         <div
-          class="flex w-full max-w-xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-2xl"
+          class="flex w-full max-w-xl flex-col overflow-hidden rounded-lg border border-edge-strong bg-field shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
-          <div class="border-b border-neutral-800 px-4 py-3">
-            <h2 class="text-sm font-semibold text-neutral-100">Import from cURL</h2>
-            <p class="mt-0.5 text-xs text-neutral-500">Paste a curl command to create a new request.</p>
+          <div class="border-b border-edge px-4 py-3">
+            <h2 class="text-sm font-semibold text-ink">Import from cURL</h2>
+            <p class="mt-0.5 text-xs text-ink-muted">Paste a curl command to create a new request.</p>
           </div>
 
           <div class="flex flex-col gap-3 px-4 py-3">
@@ -64,7 +76,7 @@ export default function ImportCurlModal() {
               autofocus
               rows={8}
               spellcheck={false}
-              class="w-full resize-none rounded border border-neutral-800 bg-neutral-950 p-2 font-mono text-xs text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+              class="w-full resize-none rounded border border-edge bg-app p-2 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
               placeholder={"curl -X POST https://api.example.com/users \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\":\"jane\"}'"}
               value={raw()}
               onInput={(e) => {
@@ -75,33 +87,33 @@ export default function ImportCurlModal() {
             />
 
             <Show when={error()}>
-              <p class="rounded border border-red-900 bg-red-950/40 px-2 py-1.5 text-xs text-red-400">{error()}</p>
+              <p class="rounded border border-danger-edge bg-danger-bg/40 px-2 py-1.5 text-xs text-danger">{error()}</p>
             </Show>
 
             <Show when={preview()}>
               {(p) => (
-                <div class="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs">
-                  <span class="font-mono font-semibold text-emerald-400">{p().method}</span>
-                  <span class="flex-1 truncate font-mono text-neutral-300">{p().url}</span>
+                <div class="flex items-center gap-2 rounded border border-edge bg-app px-2 py-1.5 text-xs">
+                  <span class="font-mono font-semibold text-accent-fg">{p().method}</span>
+                  <span class="flex-1 truncate font-mono text-ink-dim">{p().url}</span>
                 </div>
               )}
             </Show>
           </div>
 
-          <div class="flex items-center justify-between gap-2 border-t border-neutral-800 px-4 py-3">
+          <div class="flex items-center justify-between gap-2 border-t border-edge px-4 py-3">
             <button
-              class="text-xs text-neutral-500 hover:text-neutral-300"
+              class="text-xs text-ink-muted hover:text-ink-dim"
               onClick={handlePreview}
               disabled={!raw().trim()}
             >
               Preview
             </button>
             <div class="flex items-center gap-2">
-              <button class="rounded px-3 py-1.5 text-xs text-neutral-400 hover:bg-neutral-800" onClick={close}>
+              <button class="rounded px-3 py-1.5 text-xs text-ink-muted hover:bg-raised" onClick={close}>
                 Cancel
               </button>
               <button
-                class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-neutral-100 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                class="rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!raw().trim() || importing()}
                 onClick={handleImport}
               >

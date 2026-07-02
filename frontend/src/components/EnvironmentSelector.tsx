@@ -5,7 +5,7 @@ export default function EnvironmentSelector() {
   return (
     <div class="flex items-center gap-1.5">
       <select
-        class="rounded bg-neutral-900 px-2 py-1 text-xs text-neutral-300 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+        class="rounded bg-field px-2 py-1 text-xs text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge-strong"
         value={appState.activeEnvironmentId ?? ''}
         onChange={(e) => setAppState('activeEnvironmentId', e.currentTarget.value || null)}
       >
@@ -13,7 +13,7 @@ export default function EnvironmentSelector() {
         <For each={appState.environments}>{(env) => <option value={env.id}>{env.name}</option>}</For>
       </select>
       <button
-        class="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
+        class="rounded px-1.5 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
         onClick={() => setEnvironmentEditorOpen(true)}
         title="Manage environments"
       >

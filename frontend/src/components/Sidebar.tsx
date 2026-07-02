@@ -82,12 +82,12 @@ export default function Sidebar() {
     return (
       <Show when={!filtering() || nodeMatches(props.node, query())}>
         <button
-          class="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-sm text-neutral-300 hover:bg-neutral-800"
+          class="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-sm text-ink-dim hover:bg-raised"
           style={{ 'padding-left': `${8 + props.depth * 14}px` }}
           onClick={() => toggleFolder(folder().id)}
         >
-          <span class="w-3 shrink-0 text-neutral-600">{open() ? '▾' : '▸'}</span>
-          <span class="truncate text-neutral-400">{folder().name}</span>
+          <span class="w-3 shrink-0 text-ink-faint">{open() ? '▾' : '▸'}</span>
+          <span class="truncate text-ink-muted">{folder().name}</span>
         </button>
         <Show when={open()}>
           <TreeChildren node={props.node} depth={props.depth + 1} />
@@ -100,11 +100,11 @@ export default function Sidebar() {
     return (
       <Show when={!filtering() || matchesRequest(props.req, query())}>
         <button
-          class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm text-neutral-300 hover:bg-neutral-800"
+          class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm text-ink-dim hover:bg-raised"
           style={{ 'padding-left': `${8 + props.depth * 14}px` }}
           onClick={() => openTab(props.req.id)}
         >
-          <span class="w-12 shrink-0 font-mono text-[10px] font-semibold text-emerald-400">{props.req.method}</span>
+          <span class="w-12 shrink-0 font-mono text-[10px] font-semibold text-accent-fg">{props.req.method}</span>
           <span class="truncate">{props.req.name}</span>
         </button>
       </Show>
@@ -121,13 +121,13 @@ export default function Sidebar() {
   }
 
   return (
-    <div class="flex h-full w-64 flex-col border-r border-neutral-800 bg-neutral-925">
-      <div class="border-b border-neutral-800 p-2">
+    <div class="flex h-full w-64 flex-col border-r border-edge bg-surface">
+      <div class="border-b border-edge p-2">
         <WorkspaceSwitcher />
       </div>
       <div class="p-2">
         <input
-          class="w-full rounded bg-neutral-900 px-2 py-1 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+          class="w-full rounded bg-field px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-edge-strong"
           placeholder="Filter requests…"
           value={sidebarFilter()}
           onInput={(e) => setSidebarFilter(e.currentTarget.value)}
@@ -136,9 +136,9 @@ export default function Sidebar() {
       <div class="flex-1 overflow-y-auto px-1 pb-2">
         <Show when={isEmpty()}>
           <div class="flex flex-col items-start gap-2 px-2 py-4">
-            <p class="text-xs text-neutral-600">No requests yet.</p>
+            <p class="text-xs text-ink-faint">No requests yet.</p>
             <button
-              class="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-500"
+              class="rounded bg-accent px-2 py-1 text-xs font-medium text-accent-contrast hover:bg-accent-hover"
               onClick={() => void createRequest()}
             >
               + New Request
@@ -146,7 +146,7 @@ export default function Sidebar() {
           </div>
         </Show>
         <Show when={!isEmpty() && noMatches()}>
-          <p class="px-2 py-4 text-xs text-neutral-600">No matches.</p>
+          <p class="px-2 py-4 text-xs text-ink-faint">No matches.</p>
         </Show>
         <Show when={!isEmpty() && !noMatches()}>
           <TreeChildren node={tree()} depth={0} />

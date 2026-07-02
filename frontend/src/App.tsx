@@ -10,9 +10,11 @@ import EnvironmentEditor from './components/EnvironmentEditor'
 import ImportCurlModal from './components/ImportCurlModal'
 import StreamConsole from './components/StreamConsole'
 import HistoryPanel from './components/HistoryPanel'
-import { appState, setImportModalOpen, streamConsoleOpen, setStreamConsoleOpen } from './lib/store'
+import SettingsModal from './components/SettingsModal'
+import { appState, setImportModalOpen, setSettingsOpen, streamConsoleOpen, setStreamConsoleOpen } from './lib/store'
 import { wails } from './lib/wails'
 import { createRequest, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
+import { initTheme } from './lib/theme'
 import type { ResponseData } from './types'
 
 export default function App() {
@@ -22,6 +24,9 @@ export default function App() {
   const [loadError, setLoadError] = createSignal<string | null>(null)
 
   onMount(() => {
+    // Theme first so the correct colors paint before data arrives; a
+    // settings-load failure must never block data loading.
+    initTheme().catch(() => {})
     loadAll().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))
   })
 
@@ -86,32 +91,38 @@ export default function App() {
   return (
     <div class="flex h-screen flex-col overflow-hidden">
       <Show when={loadError()}>
-        <div class="flex items-center justify-between border-b border-red-900 bg-red-950/60 px-3 py-1 text-xs text-red-300">
+        <div class="flex items-center justify-between border-b border-danger-edge bg-danger-bg/60 px-3 py-1 text-xs text-danger">
           <span>{loadError()}</span>
-          <button class="rounded px-2 py-0.5 hover:bg-red-900/50" onClick={() => setLoadError(null)}>
+          <button class="rounded px-2 py-0.5 hover:bg-danger-bg/60" onClick={() => setLoadError(null)}>
             Dismiss
           </button>
         </div>
       </Show>
-      <div class="flex h-8 items-center justify-end gap-2 border-b border-neutral-800 px-2">
+      <div class="flex h-8 items-center justify-end gap-2 border-b border-edge px-2">
         <button
-          class="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-500"
+          class="rounded bg-accent px-2 py-1 text-xs font-medium text-accent-contrast hover:bg-accent-hover"
           onClick={() => createRequest().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))}
         >
           + New Request
         </button>
         <button
-          class="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
+          class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
           onClick={() => setImportModalOpen(true)}
         >
           Import cURL
         </button>
         <button
-          class="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
-          classList={{ 'bg-neutral-800 text-neutral-200': streamConsoleOpen() }}
+          class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
+          classList={{ 'bg-raised text-ink': streamConsoleOpen() }}
           onClick={() => setStreamConsoleOpen((v) => !v)}
         >
           Stream Console
+        </button>
+        <button
+          class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
+          onClick={() => setSettingsOpen(true)}
+        >
+          Settings
         </button>
         <EnvironmentSelector />
       </div>
@@ -120,13 +131,13 @@ export default function App() {
           <div class="flex-1 overflow-hidden">
             <Sidebar />
           </div>
-          <div class="flex h-56 flex-col border-r border-t border-neutral-800 bg-neutral-925">
+          <div class="flex h-56 flex-col border-r border-t border-edge bg-surface">
             <button
-              class="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
+              class="flex items-center justify-between border-b border-edge px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted hover:text-ink-dim"
               onClick={() => setShowHistory((v) => !v)}
             >
               History
-              <span class="text-neutral-600">{showHistory() ? '▾' : '▸'}</span>
+              <span class="text-ink-faint">{showHistory() ? '▾' : '▸'}</span>
             </button>
             <div class="flex-1 overflow-hidden" classList={{ hidden: !showHistory() }}>
               <HistoryPanel />
@@ -150,6 +161,7 @@ export default function App() {
       <EnvironmentEditor />
       <ImportCurlModal />
       <StreamConsole />
+      <SettingsModal />
     </div>
   )
 }

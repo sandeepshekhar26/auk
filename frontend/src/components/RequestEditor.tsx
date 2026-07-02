@@ -74,9 +74,9 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
     <Show when={active()} fallback={<EmptyState />}>
       {(req) => (
         <div class="flex h-full flex-col">
-          <div class="flex items-center gap-2 border-b border-neutral-800 p-2">
+          <div class="flex items-center gap-2 border-b border-edge p-2">
             <select
-              class="rounded bg-neutral-900 px-2 py-1 font-mono text-xs font-semibold text-emerald-400 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+              class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-accent-fg focus:outline-none focus:ring-1 focus:ring-edge-strong"
               value={req().method}
               onChange={(e) => setAppState('requests', activeIndex(), 'method', e.currentTarget.value)}
             >
@@ -85,42 +85,42 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
               ))}
             </select>
             <input
-              class="flex-1 rounded bg-neutral-900 px-2 py-1 font-mono text-sm text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+              class="flex-1 rounded bg-field px-2 py-1 font-mono text-sm text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
               value={req().url}
               placeholder="https://api.example.com/{{ path }}"
               onInput={(e) => setAppState('requests', activeIndex(), 'url', e.currentTarget.value)}
             />
             <button
-              class="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500"
+              class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
               onClick={() => props.onSend(req().id)}
             >
               Send
             </button>
           </div>
 
-          <div class="flex items-center gap-1 border-b border-neutral-800 px-2">
+          <div class="flex items-center gap-1 border-b border-edge px-2">
             <For each={TABS}>
               {(t) => (
                 <button
                   class="relative px-3 py-2 text-xs font-medium"
                   classList={{
-                    'text-neutral-100': tab() === t.id,
-                    'text-neutral-500 hover:text-neutral-300': tab() !== t.id,
+                    'text-ink': tab() === t.id,
+                    'text-ink-muted hover:text-ink-dim': tab() !== t.id,
                   }}
                   onClick={() => setTab(t.id)}
                 >
                   {t.label}
                   <Show when={t.id === 'params' && enabledCount(req().params) > 0}>
-                    <span class="ml-1 text-neutral-600">{enabledCount(req().params)}</span>
+                    <span class="ml-1 text-ink-faint">{enabledCount(req().params)}</span>
                   </Show>
                   <Show when={t.id === 'headers' && enabledCount(req().headers) > 0}>
-                    <span class="ml-1 text-neutral-600">{enabledCount(req().headers)}</span>
+                    <span class="ml-1 text-ink-faint">{enabledCount(req().headers)}</span>
                   </Show>
                   <Show when={t.id === 'auth' && req().authRef && req().authRef!.kind !== 'none'}>
-                    <span class="ml-1 text-emerald-500">●</span>
+                    <span class="ml-1 text-accent-fg">●</span>
                   </Show>
                   <Show when={tab() === t.id}>
-                    <span class="absolute inset-x-2 -bottom-px h-px bg-emerald-500" />
+                    <span class="absolute inset-x-2 -bottom-px h-px bg-accent-hover" />
                   </Show>
                 </button>
               )}
@@ -169,7 +169,7 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
 
 function EmptyState() {
   return (
-    <div class="flex h-full flex-col items-center justify-center gap-2 text-neutral-600">
+    <div class="flex h-full flex-col items-center justify-center gap-2 text-ink-faint">
       <p class="text-sm">No request open</p>
       <p class="text-xs">Press ⌘K to search, or ⌘N to create a request</p>
     </div>
