@@ -31,7 +31,63 @@ export interface RequestDef {
   params: KeyValue[]
   body: RequestBody | null
   authRef: AuthConfig | null
+  perf?: PerfConfig | null
   orderKey: string
+}
+
+export type PerfExecutor = 'constant-vus' | 'ramping-vus'
+
+export interface PerfStage {
+  duration: string
+  target: number
+}
+
+export interface PerfThreshold {
+  metric: string
+  expression: string
+}
+
+export interface PerfConfig {
+  executor: PerfExecutor
+  vus?: number
+  duration?: string
+  stages?: PerfStage[]
+  thresholds?: PerfThreshold[]
+}
+
+export interface PerfSamplePoint {
+  timeOffsetMs: number
+  rps: number
+  p95Ms: number
+  p99Ms: number
+  avgMs: number
+  errorRate: number
+  activeVUs: number
+}
+
+export interface PerfThresholdResult {
+  metric: string
+  expression: string
+  passed: boolean
+}
+
+export interface PerfResult {
+  requestId: string
+  requests: number
+  rps: number
+  failRate: number
+  durationAvgMs: number
+  durationMinMs: number
+  durationMedMs: number
+  durationP90Ms: number
+  durationP95Ms: number
+  durationMaxMs: number
+  thresholdResults: PerfThresholdResult[]
+  passed: boolean
+  exitCode: number
+  wallMs: number
+  timestamp: string
+  error?: string
 }
 
 export interface KeyValue {

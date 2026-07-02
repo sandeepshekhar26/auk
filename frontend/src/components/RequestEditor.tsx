@@ -5,15 +5,17 @@ import type { KeyValue } from '../types'
 import KeyValueTable from './KeyValueTable'
 import BodyEditor from './BodyEditor'
 import AuthConfigForm from './AuthConfigForm'
+import PerfPanel from './PerfPanel'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
-type EditorTab = 'params' | 'headers' | 'body' | 'auth'
+type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'perf'
 const TABS: { id: EditorTab; label: string }[] = [
   { id: 'params', label: 'Params' },
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
+  { id: 'perf', label: 'Perf' },
 ]
 
 export default function RequestEditor(props: { onSend: (requestId: string) => void }) {
@@ -158,6 +160,11 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
             <Show when={tab() === 'auth'}>
               <div class="overflow-y-auto">
                 <AuthConfigForm requestIndex={activeIndex()} />
+              </div>
+            </Show>
+            <Show when={tab() === 'perf'}>
+              <div class="flex-1 overflow-hidden">
+                <PerfPanel requestIndex={activeIndex()} />
               </div>
             </Show>
           </div>
