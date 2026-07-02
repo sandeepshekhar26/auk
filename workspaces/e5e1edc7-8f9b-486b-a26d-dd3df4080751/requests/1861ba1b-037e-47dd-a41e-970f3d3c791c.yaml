@@ -1,0 +1,7 @@
+id: 1861ba1b-037e-47dd-a41e-970f3d3c791c
+workspaceId: e5e1edc7-8f9b-486b-a26d-dd3df4080751
+name: GET httpbin
+protocol: http
+method: GET
+url: https://httpbin.org/get
+orderKey: a0

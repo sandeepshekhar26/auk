@@ -1,6 +1,6 @@
 import { createStore } from 'solid-js/store'
 import { createSignal } from 'solid-js'
-import type { Environment, Folder, HistoryEntry, RequestDef, Workspace } from '../types'
+import type { Environment, Folder, HistoryEntry, RequestDef, StreamEvent, Workspace } from '../types'
 
 export interface AppState {
   workspaces: Workspace[]
@@ -12,6 +12,7 @@ export interface AppState {
   openTabIds: string[]
   activeTabId: string | null
   history: HistoryEntry[]
+  streamEvents: StreamEvent[]
 }
 
 export const [appState, setAppState] = createStore<AppState>({
@@ -24,10 +25,20 @@ export const [appState, setAppState] = createStore<AppState>({
   openTabIds: [],
   activeTabId: null,
   history: [],
+  streamEvents: [],
 })
 
 export const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
 export const [sidebarFilter, setSidebarFilter] = createSignal('')
+
+// UI-only open/closed flags for modals/panels. Components read+write these
+// directly; they do NOT own or duplicate this state locally, so multiple
+// components (e.g. EnvironmentSelector's "Manage" button and
+// EnvironmentEditor itself) can toggle the same panel without prop drilling.
+export const [environmentEditorOpen, setEnvironmentEditorOpen] = createSignal(false)
+export const [importModalOpen, setImportModalOpen] = createSignal(false)
+export const [shortcutSheetOpen, setShortcutSheetOpen] = createSignal(false)
+export const [streamConsoleOpen, setStreamConsoleOpen] = createSignal(false)
 
 export function openTab(requestId: string) {
   setAppState('openTabIds', (ids) => (ids.includes(requestId) ? ids : [...ids, requestId]))
@@ -41,4 +52,8 @@ export function closeTab(requestId: string) {
     const remaining = appState.openTabIds.filter((id) => id !== requestId)
     return remaining[remaining.length - 1] ?? null
   })
+}
+
+export function pushStreamEvent(evt: StreamEvent) {
+  setAppState('streamEvents', (events) => [...events.slice(-499), evt])
 }

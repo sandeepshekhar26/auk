@@ -1,10 +1,10 @@
-// Package storage implements core.Store. MemoryStore below is the scaffold
-// checkpoint implementation used to get the engine compiling end-to-end;
-// the real, git-friendly implementation (YAML one-file-per-resource as
-// source of truth + a rusqlite-equivalent modernc.org/sqlite cache — see
-// docs/03-tech-stack.md) replaces it without the engine or callers changing,
-// because everything talks to the core.Store interface only.
 package storage
+
+// MemoryStore is a pure in-memory core.Store, kept around (alongside the
+// git-friendly FileStore in filestore.go, the real implementation) as a
+// lightweight option for tests/tools that don't need on-disk persistence.
+// Both satisfy core.Store identically, so callers can swap between them
+// freely.
 
 import (
 	"fmt"
@@ -136,6 +136,20 @@ func (s *MemoryStore) LastResponse(requestID model.ID) (model.ResponseData, bool
 	defer s.mu.RUnlock()
 	r, ok := s.lastResponses[requestID]
 	return r, ok
+}
+
+// LookupRequestByName implements core.Store for name-addressed chaining
+// refs (response('Other Request').body...). Scoped to workspaceID so two
+// workspaces may reuse the same request name without colliding.
+func (s *MemoryStore) LookupRequestByName(workspaceID model.ID, name string) (model.RequestDef, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.requests {
+		if r.WorkspaceID == workspaceID && r.Name == name {
+			return r, nil
+		}
+	}
+	return model.RequestDef{}, fmt.Errorf("request named %q not found in workspace %q", name, workspaceID)
 }
 
 // AppendHistory implements core.Store.

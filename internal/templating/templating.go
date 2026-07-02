@@ -30,16 +30,51 @@ import (
 
 var refPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
+// responseRefPattern matches a `response('Name').path` / `response("Name")`
+// chaining reference. Capture group 2 (the path suffix, if any) is whatever
+// follows the closing paren and leading dot, e.g. `body.token` or `status`.
+var responseRefPattern = regexp.MustCompile(`^response\(\s*['"](.+?)['"]\s*\)(?:\.(.+))?$`)
+
+// ParseResponseRef parses a `response('ReqName').jsonpath` expression into
+// its request-name and path components, WITHOUT executing anything —
+// actually resolving the reference (cache lookup + possible auto-send)
+// requires the engine, which templating cannot import (core -> templating
+// would cycle). ok is false when expr is not a response() reference.
+func ParseResponseRef(expr string) (requestName, path string, ok bool) {
+	m := responseRefPattern.FindStringSubmatch(strings.TrimSpace(expr))
+	if m == nil {
+		return "", "", false
+	}
+	return m[1], m[2], true
+}
+
 // Func is a template function invocable as ${name(args)} or ${name} with no args.
 type Func func(args []string) (string, error)
 
-type Engine struct {
-	funcs map[string]Func
+// ChainResolver resolves a `response('Name').path` reference: it looks up
+// the named request within the given workspace, returns its cached response
+// — auto-sending it first if no cached response exists yet — and extracts
+// path from the result. core.Engine implements this (see
+// core.ChainResolver / Engine.ResolveChainRef); templating only parses the
+// expression and calls back through this narrow interface so this package
+// never imports core's execution machinery (avoiding the core -> templating
+// -> core import cycle).
+type ChainResolver interface {
+	ResolveChainRef(ctx context.Context, workspaceID model.ID, requestName, path string) (string, error)
 }
 
-func New() *Engine {
-	e := &Engine{funcs: make(map[string]Func)}
+type Engine struct {
+	funcs    map[string]Func
+	resolver ChainResolver
+}
+
+// New builds a templating Engine. resolver may be nil (e.g. in tests that
+// don't exercise response() refs); a nil resolver makes any response() ref
+// fail with a clear error instead of panicking.
+func New(resolver ChainResolver) *Engine {
+	e := &Engine{funcs: make(map[string]Func), resolver: resolver}
 	e.registerBuiltins()
+	e.registerExtra()
 	return e
 }
 
@@ -87,7 +122,7 @@ func hashFunc(newHash func() hash.Hash) Func {
 }
 
 // Resolve implements core.Templater.
-func (e *Engine) Resolve(_ context.Context, req model.RequestDef, env *model.Environment, history core.ResponseLookup) (core.ResolvedRequest, error) {
+func (e *Engine) Resolve(ctx context.Context, req model.RequestDef, env *model.Environment, history core.ResponseLookup) (core.ResolvedRequest, error) {
 	vars := map[string]string{}
 	if env != nil {
 		for _, kv := range env.Variables {
@@ -101,7 +136,7 @@ func (e *Engine) Resolve(_ context.Context, req model.RequestDef, env *model.Env
 	resolve := func(s string) string {
 		return refPattern.ReplaceAllStringFunc(s, func(match string) string {
 			expr := strings.TrimSpace(match[2 : len(match)-1])
-			out, err := e.eval(expr, vars, history)
+			out, err := e.eval(ctx, expr, req.WorkspaceID, vars, history)
 			if err != nil && firstErr == nil {
 				firstErr = err
 			}
@@ -133,9 +168,20 @@ func (e *Engine) Resolve(_ context.Context, req model.RequestDef, env *model.Env
 
 // eval resolves one `${...}` expression: a bare variable name, a
 // `func(args)` call, or a `response('ReqName').body` chaining reference.
-func (e *Engine) eval(expr string, vars map[string]string, history core.ResponseLookup) (string, error) {
+func (e *Engine) eval(ctx context.Context, expr string, workspaceID model.ID, vars map[string]string, history core.ResponseLookup) (string, error) {
 	if v, ok := vars[expr]; ok {
 		return v, nil
+	}
+
+	if name, path, ok := ParseResponseRef(expr); ok {
+		if e.resolver == nil {
+			return "", fmt.Errorf("response(%q) ref: no chain resolver configured", name)
+		}
+		out, err := e.resolver.ResolveChainRef(ctx, workspaceID, name, path)
+		if err != nil {
+			return "", fmt.Errorf("response(%q) ref: %w", name, err)
+		}
+		return out, nil
 	}
 
 	if idx := strings.Index(expr, "("); idx > 0 && strings.HasSuffix(expr, ")") {
@@ -152,6 +198,14 @@ func (e *Engine) eval(expr string, vars map[string]string, history core.Response
 		}
 		return "", fmt.Errorf("unknown template function %q", name)
 	}
+
+	// history (core.ResponseLookup) is currently unused by eval directly —
+	// response() refs are served by e.resolver, which does its own
+	// cache-vs-auto-send decision inside the engine. It stays a parameter so
+	// core.Templater's signature (and the by-id last-response cache it
+	// exposes) is available to future non-chaining callers without another
+	// signature change.
+	_ = history
 
 	// Undefined bare variable: leave the placeholder as-is rather than
 	// silently emitting an empty string, so a typo'd variable name is

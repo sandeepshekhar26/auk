@@ -5,3 +5,5 @@ frontend/wailsjs
 *.log
 apitool.db
 apitool.db-*
+/cli
+/apitool-cli

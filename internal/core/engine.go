@@ -53,6 +53,10 @@ type Store interface {
 	GetEnvironment(id model.ID) (*model.Environment, error)
 	SaveResponse(model.ResponseData) error
 	AppendHistory(model.HistoryEntry) error
+	// LookupRequestByName resolves a request chaining reference like
+	// response('Other Request').body.token, which addresses the target by
+	// display name (scoped to one workspace) rather than by id.
+	LookupRequestByName(workspaceID model.ID, name string) (model.RequestDef, error)
 }
 
 // DispatchContext carries everything the PolicyEngine needs to decide
@@ -122,6 +126,17 @@ func (e *Engine) RegisterProtocol(p Protocol) {
 // and persists the result — identically every time, parameterized only by
 // origin (see DispatchContext).
 func (e *Engine) RunRequest(ctx context.Context, sessionID model.ID, requestID model.ID, environmentID model.ID, origin string, sink EventSink) (model.ResponseData, error) {
+	// Every request that runs — top-level or chained — joins the chain
+	// bookkeeping so a response() ref reached from deeper in the chain can
+	// detect "this would revisit a request already running in this chain"
+	// even on its first hop (origin=="gui"/"cli"/"mcp" requests start a
+	// fresh chain here; origin=="chain" requests already carry state
+	// attached by ResolveChainRef and just extend it).
+	ctx, err := withChainRequest(ctx, requestID)
+	if err != nil {
+		return model.ResponseData{}, err
+	}
+
 	req, err := e.Store.GetRequest(requestID)
 	if err != nil {
 		return model.ResponseData{}, fmt.Errorf("load request: %w", err)

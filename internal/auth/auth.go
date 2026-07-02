@@ -1,7 +1,9 @@
-// Package auth applies credentials to a resolved request. This is the MVP
-// subset (Basic, Bearer, API Key); OAuth2/JWT-sign/AWS-SigV4/NTLM are
-// explicitly deferred per docs/01-feature-roadmap.md — each is registered
-// the same way once implemented, so adding one never touches the engine.
+// Package auth applies credentials to a resolved request. Basic, Bearer,
+// API Key, JWT (HMAC signing), and OAuth2 (client-credentials grant only)
+// are implemented; AWS-SigV4/NTLM and OAuth2 authorization-code (with a
+// system-browser redirect) are explicitly deferred per
+// docs/01-feature-roadmap.md — each is registered the same way once
+// implemented, so adding one never touches the engine.
 package auth
 
 import (
@@ -19,7 +21,7 @@ type Applier struct{}
 func New() *Applier { return &Applier{} }
 
 // Apply implements core.AuthApplier.
-func (a *Applier) Apply(_ context.Context, cfg model.AuthConfig, req core.ResolvedRequest) (core.ResolvedRequest, error) {
+func (a *Applier) Apply(ctx context.Context, cfg model.AuthConfig, req core.ResolvedRequest) (core.ResolvedRequest, error) {
 	switch cfg.Kind {
 	case model.AuthNone:
 		return req, nil
@@ -55,6 +57,26 @@ func (a *Applier) Apply(_ context.Context, cfg model.AuthConfig, req core.Resolv
 		default:
 			return req, fmt.Errorf("apikey auth: unknown location %q", cfg.APIKey.In)
 		}
+		return req, nil
+	case model.AuthJWT:
+		if cfg.JWT == nil {
+			return req, fmt.Errorf("jwt auth config missing")
+		}
+		signed, err := signJWT(*cfg.JWT)
+		if err != nil {
+			return req, err
+		}
+		req.Headers = append(req.Headers, model.KeyValue{Key: "Authorization", Value: "Bearer " + signed, Enabled: true})
+		return req, nil
+	case model.AuthOAuth2:
+		if cfg.OAuth2 == nil {
+			return req, fmt.Errorf("oauth2 auth config missing")
+		}
+		token, err := fetchOAuth2Token(ctx, *cfg.OAuth2)
+		if err != nil {
+			return req, err
+		}
+		req.Headers = append(req.Headers, model.KeyValue{Key: "Authorization", Value: "Bearer " + token, Enabled: true})
 		return req, nil
 	default:
 		return req, fmt.Errorf("auth kind %q not yet implemented", cfg.Kind)

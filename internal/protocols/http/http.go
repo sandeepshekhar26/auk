@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"time"
 
@@ -23,9 +24,14 @@ type Client struct {
 // New builds an HTTP protocol client. TLS/proxy/mTLS configuration is
 // injected via opts so every environment can carry its own cert pool
 // (docs/03-tech-stack.md — crypto/tls is the single TLS backend for every
-// protocol; this is the seam future auth/mTLS work plugs into).
+// protocol; this is the seam future auth/mTLS work plugs into). A cookie
+// jar is attached by default so Set-Cookie responses persist across
+// requests made through the same Client instance (docs/01-feature-roadmap.md
+// "Cookie jar per workspace" — callers that need a workspace-scoped jar
+// should build one with cookiejar.New and pass it via WithCookieJar).
 func New(opts ...Option) *Client {
-	c := &Client{http: &http.Client{Timeout: 60 * time.Second}}
+	jar, _ := cookiejar.New(nil)
+	c := &Client{http: &http.Client{Timeout: 60 * time.Second, Jar: jar}}
 	for _, opt := range opts {
 		opt(c)
 	}

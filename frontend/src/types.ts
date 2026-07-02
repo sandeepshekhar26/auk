@@ -40,10 +40,13 @@ export interface KeyValue {
   enabled: boolean
 }
 
+export type BodyKind = 'none' | 'json' | 'text' | 'form' | 'binary' | 'graphql'
+
 export interface RequestBody {
-  kind: 'none' | 'json' | 'text' | 'form' | 'binary' | 'graphql'
+  kind: BodyKind
   text?: string
   formFields?: KeyValue[]
+  graphqlVariables?: string
 }
 
 export type AuthKind = 'none' | 'basic' | 'bearer' | 'apikey' | 'jwt' | 'oauth2'
@@ -54,6 +57,7 @@ export interface AuthConfig {
   bearer?: { token: string }
   apikey?: { key: string; value: string; in: 'header' | 'query' }
   jwt?: { secret: string; algorithm: string; claims: string }
+  oauth2?: { clientId: string; clientSecret: string; tokenUrl: string; scopes?: string[] }
 }
 
 export interface Environment {

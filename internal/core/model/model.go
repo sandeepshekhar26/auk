@@ -51,6 +51,11 @@ type RequestBody struct {
 	Kind       BodyKind   `yaml:"kind" json:"kind"`
 	Text       string     `yaml:"text,omitempty" json:"text,omitempty"`
 	FormFields []KeyValue `yaml:"formFields,omitempty" json:"formFields,omitempty"`
+	// GraphQLVariables holds the raw JSON object of GraphQL variables for a
+	// BodyGraphQL request; Text holds the raw query/mutation string. Kept as
+	// a separate field (rather than packed into Text) so the frontend query
+	// editor and variables pane can bind to them independently.
+	GraphQLVariables string `yaml:"graphqlVariables,omitempty" json:"graphqlVariables,omitempty"`
 }
 
 type AuthKind string
@@ -70,6 +75,7 @@ type AuthConfig struct {
 	Bearer *BearerAuth `yaml:"bearer,omitempty" json:"bearer,omitempty"`
 	APIKey *APIKeyAuth `yaml:"apikey,omitempty" json:"apikey,omitempty"`
 	JWT    *JWTAuth    `yaml:"jwt,omitempty" json:"jwt,omitempty"`
+	OAuth2 *OAuth2Auth `yaml:"oauth2,omitempty" json:"oauth2,omitempty"`
 }
 
 type BasicAuth struct {
@@ -98,6 +104,15 @@ type JWTAuth struct {
 	Secret    string `yaml:"secret" json:"secret"`
 	Algorithm string `yaml:"algorithm" json:"algorithm"`
 	Claims    string `yaml:"claims" json:"claims"`
+}
+
+// OAuth2Auth is the client-credentials grant only; full authorization-code
+// with a system-browser redirect is out of scope (see internal/auth).
+type OAuth2Auth struct {
+	ClientID     string   `yaml:"clientId" json:"clientId"`
+	ClientSecret string   `yaml:"clientSecret" json:"clientSecret"`
+	TokenURL     string   `yaml:"tokenUrl" json:"tokenUrl"`
+	Scopes       []string `yaml:"scopes,omitempty" json:"scopes,omitempty"`
 }
 
 type RequestDef struct {

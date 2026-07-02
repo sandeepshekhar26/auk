@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
-import { appState, commandPaletteOpen, setCommandPaletteOpen, openTab } from '../lib/store'
+import { appState, commandPaletteOpen, setCommandPaletteOpen, openTab, setShortcutSheetOpen } from '../lib/store'
 import type { CommandItem } from '../types'
 
 export default function CommandPalette() {
@@ -28,6 +28,10 @@ export default function CommandPalette() {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
       e.preventDefault()
       setCommandPaletteOpen((v) => !v)
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+      e.preventDefault()
+      setShortcutSheetOpen((v) => !v)
     }
     if (e.key === 'Escape' && commandPaletteOpen()) close()
   }
