@@ -162,13 +162,22 @@ type headerKV struct {
 	Value string `json:"value"`
 }
 
+type assertionResult struct {
+	Description string `json:"description"`
+	Passed      bool   `json:"passed"`
+	Actual      string `json:"actual,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
 type runRequestOut struct {
-	Status     int        `json:"status"`
-	StatusText string     `json:"statusText"`
-	Headers    []headerKV `json:"headers"`
-	Body       string     `json:"body"`
-	TimingMs   int64      `json:"timingMs"`
-	Error      string     `json:"error,omitempty"`
+	Status           int               `json:"status"`
+	StatusText       string            `json:"statusText"`
+	Headers          []headerKV        `json:"headers"`
+	Body             string            `json:"body"`
+	TimingMs         int64             `json:"timingMs"`
+	AssertionsPassed *bool             `json:"assertionsPassed,omitempty"`
+	Assertions       []assertionResult `json:"assertions,omitempty"`
+	Error            string            `json:"error,omitempty"`
 }
 
 func (h *handlers) runRequest(ctx context.Context, _ *mcp.CallToolRequest, in runRequestIn) (*mcp.CallToolResult, runRequestOut, error) {
@@ -199,7 +208,40 @@ func (h *handlers) runRequest(ctx context.Context, _ *mcp.CallToolRequest, in ru
 	for _, hh := range resp.Headers {
 		out.Headers = append(out.Headers, headerKV{Key: hh.Key, Value: hh.Value})
 	}
+	if len(resp.AssertionResults) > 0 {
+		allPassed := true
+		for _, ar := range resp.AssertionResults {
+			if !ar.Passed {
+				allPassed = false
+			}
+			out.Assertions = append(out.Assertions, assertionResult{
+				Description: assertionLabel(ar.Assertion),
+				Passed:      ar.Passed,
+				Actual:      ar.Actual,
+				Error:       ar.Error,
+			})
+		}
+		out.AssertionsPassed = &allPassed
+	}
 	return nil, out, nil
+}
+
+// assertionLabel renders an assertion as a compact human-readable line for
+// the MCP client, e.g. `body.user.id gt 10`.
+func assertionLabel(a model.Assertion) string {
+	target := string(a.Source)
+	switch a.Source {
+	case model.AssertBody:
+		if a.Path != "" {
+			target = "body." + a.Path
+		}
+	case model.AssertHeader:
+		target = "header[" + a.Name + "]"
+	}
+	if a.Value == "" {
+		return fmt.Sprintf("%s %s", target, a.Operator)
+	}
+	return fmt.Sprintf("%s %s %s", target, a.Operator, a.Value)
 }
 
 // ---- run_perf_test ----

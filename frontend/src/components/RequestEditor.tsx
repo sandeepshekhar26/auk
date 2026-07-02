@@ -5,16 +5,18 @@ import type { KeyValue } from '../types'
 import KeyValueTable from './KeyValueTable'
 import BodyEditor from './BodyEditor'
 import AuthConfigForm from './AuthConfigForm'
+import AssertionEditor from './AssertionEditor'
 import PerfPanel from './PerfPanel'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
-type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'perf'
+type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'assert' | 'perf'
 const TABS: { id: EditorTab; label: string }[] = [
   { id: 'params', label: 'Params' },
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
+  { id: 'assert', label: 'Assert' },
   { id: 'perf', label: 'Perf' },
 ]
 
@@ -121,6 +123,12 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
                   <Show when={t.id === 'auth' && req().authRef && req().authRef!.kind !== 'none'}>
                     <span class="ml-1 text-accent-fg">●</span>
                   </Show>
+                  <Show when={t.id === 'assert' && (req().assertions?.length ?? 0) > 0}>
+                    <span class="ml-1 text-ink-faint">{req().assertions!.length}</span>
+                  </Show>
+                  <Show when={t.id === 'perf' && !!req().perf}>
+                    <span class="ml-1 text-accent-fg">●</span>
+                  </Show>
                   <Show when={tab() === t.id}>
                     <span class="absolute inset-x-2 -bottom-px h-px bg-accent-hover" />
                   </Show>
@@ -160,6 +168,11 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
             <Show when={tab() === 'auth'}>
               <div class="overflow-y-auto">
                 <AuthConfigForm requestIndex={activeIndex()} />
+              </div>
+            </Show>
+            <Show when={tab() === 'assert'}>
+              <div class="overflow-y-auto">
+                <AssertionEditor requestIndex={activeIndex()} />
               </div>
             </Show>
             <Show when={tab() === 'perf'}>

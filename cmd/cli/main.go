@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"apitool/internal/assert"
 	"apitool/internal/auth"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
@@ -127,12 +128,19 @@ func run(args []string) error {
 func buildEngine(store core.Store) *core.Engine {
 	engine := core.NewEngine(store, nil, auth.New(), nil)
 	engine.Templater = templating.New(engine)
+	engine.Asserter = cliAsserter{}
 	engine.RegisterProtocol(httpprotocol.New())
 	engine.RegisterProtocol(wsprotocol.New())
 	engine.RegisterProtocol(sseprotocol.New())
 	engine.RegisterProtocol(graphqlprotocol.New())
 	engine.RegisterProtocol(grpcprotocol.New())
 	return engine
+}
+
+type cliAsserter struct{}
+
+func (cliAsserter) Evaluate(a []model.Assertion, resp model.ResponseData) []model.AssertionResult {
+	return assert.Evaluate(a, resp)
 }
 
 // exitError turns a completed RunRequest call into the error (if any) that
@@ -143,6 +151,17 @@ func buildEngine(store core.Store) *core.Engine {
 func exitError(requestID string, resp model.ResponseData, runErr error) error {
 	if runErr != nil {
 		return fmt.Errorf("run request %q: %w", requestID, runErr)
+	}
+	// Assertions are the primary CI gate: any failed assertion fails the run,
+	// even on a 2xx response (a 200 with the wrong body is still a failure).
+	if len(resp.AssertionResults) > 0 && !assert.AllPassed(resp.AssertionResults) {
+		var failed int
+		for _, r := range resp.AssertionResults {
+			if !r.Passed {
+				failed++
+			}
+		}
+		return fmt.Errorf("request %q: %d/%d assertion(s) failed", requestID, failed, len(resp.AssertionResults))
 	}
 	if resp.Status >= 400 {
 		return fmt.Errorf("request %q returned status %d", requestID, resp.Status)

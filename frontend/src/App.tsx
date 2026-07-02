@@ -53,7 +53,9 @@ export default function App() {
     setSending(true)
     try {
       const result = await wails.SendRequest(requestId, appState.activeEnvironmentId ?? '')
-      setResponse(result)
+      // Wails widens Go's string-enum fields (assertion source/operator) to
+      // `string`; the backend only ever emits valid enum values.
+      setResponse(result as unknown as ResponseData)
     } catch (err) {
       setResponse({
         requestId,

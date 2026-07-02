@@ -26,6 +26,7 @@ function normalizeRequest(r: wailsModel.RequestDef): RequestDef {
     body: (r.body ?? null) as RequestDef['body'],
     authRef: (r.authRef ?? null) as RequestDef['authRef'],
     perf: (r.perf ?? null) as RequestDef['perf'],
+    assertions: (r.assertions ?? null) as RequestDef['assertions'],
   }
 }
 function normalizeFolder(f: wailsModel.Folder): Folder {

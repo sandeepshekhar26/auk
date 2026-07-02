@@ -1,11 +1,18 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
 import { json } from '@codemirror/lang-json'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
-import type { ResponseData } from '../types'
+import type { Assertion, AssertionResult, ResponseData } from '../types'
 import { appState } from '../lib/store'
+
+function assertionLabel(a: Assertion): string {
+  let target: string = a.source
+  if (a.source === 'body') target = a.path ? `body.${a.path}` : 'body'
+  else if (a.source === 'header') target = `header[${a.name ?? ''}]`
+  return a.value ? `${target} ${a.operator} ${a.value}` : `${target} ${a.operator}`
+}
 
 type Tab = 'body' | 'headers'
 type BodyMode = 'pretty' | 'raw'
@@ -142,6 +149,40 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                   {copied() ? 'Copied' : 'Copy as cURL'}
                 </button>
               </div>
+
+              <Show when={(res().assertionResults?.length ?? 0) > 0}>
+                {(() => {
+                  const results = (): AssertionResult[] => res().assertionResults ?? []
+                  const allPassed = () => results().every((r) => r.passed)
+                  const passCount = () => results().filter((r) => r.passed).length
+                  return (
+                    <details class="border-b border-edge" open>
+                      <summary class="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-xs">
+                        <span
+                          class="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                          classList={{ 'bg-accent text-accent-contrast': allPassed(), 'bg-danger text-accent-contrast': !allPassed() }}
+                        >
+                          {allPassed() ? 'ASSERTIONS PASSED' : 'ASSERTIONS FAILED'}
+                        </span>
+                        <span class="text-ink-muted">
+                          {passCount()}/{results().length} passed
+                        </span>
+                      </summary>
+                      <div class="flex flex-col gap-0.5 px-2 pb-2">
+                        <For each={results()}>
+                          {(r) => (
+                            <div class="flex items-center gap-2 font-mono text-[11px]">
+                              <span classList={{ 'text-accent-fg': r.passed, 'text-danger': !r.passed }}>{r.passed ? '✓' : '✗'}</span>
+                              <span class="text-ink-dim">{assertionLabel(r.assertion)}</span>
+                              <span class="truncate text-ink-faint">{r.error ? `(${r.error})` : `→ ${r.actual}`}</span>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </details>
+                  )
+                })()}
+              </Show>
 
               <div class="flex items-center gap-1 border-b border-edge px-2 py-1">
                 <button

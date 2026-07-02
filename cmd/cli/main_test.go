@@ -193,6 +193,70 @@ func TestRunFlagOrderIndependence(t *testing.T) {
 	}
 }
 
+// TestAssertionGate locks in the CI-gate contract: a 200 response with a
+// passing assertion exits 0, but the SAME 200 with a failing assertion exits
+// non-zero — a correct status is not enough if the body is wrong.
+func TestAssertionGate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok","count":3}`))
+	}))
+	defer srv.Close()
+
+	cases := []struct {
+		name       string
+		assertions []model.Assertion
+		wantErr    bool
+	}{
+		{
+			name: "passing body assertion → exit 0",
+			assertions: []model.Assertion{
+				{Source: model.AssertStatus, Operator: model.OpEq, Value: "200", Enabled: true},
+				{Source: model.AssertBody, Path: "status", Operator: model.OpEq, Value: "ok", Enabled: true},
+			},
+			wantErr: false,
+		},
+		{
+			name: "failing body assertion on a 200 → non-zero",
+			assertions: []model.Assertion{
+				{Source: model.AssertBody, Path: "count", Operator: model.OpGt, Value: "10", Enabled: true},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := storage.NewFileStore(t.TempDir())
+			if err != nil {
+				t.Fatalf("NewFileStore: %v", err)
+			}
+			reqID, err := seedDemoData(store, srv.URL)
+			if err != nil {
+				t.Fatalf("seedDemoData: %v", err)
+			}
+			// Attach assertions to the seeded request.
+			req, _ := store.GetRequest(reqID)
+			req.Assertions = tc.assertions
+			if err := store.PutRequest(req); err != nil {
+				t.Fatalf("PutRequest: %v", err)
+			}
+
+			engine := buildEngine(store)
+			resp, runErr := engine.RunRequest(context.Background(), uuid.NewString(), reqID, "", "cli", core.NoopSink{})
+			if resp.Status != 200 {
+				t.Fatalf("expected status 200, got %d (runErr=%v)", resp.Status, runErr)
+			}
+			if len(resp.AssertionResults) == 0 {
+				t.Fatal("expected assertion results to be attached to the response")
+			}
+			if err := exitError(reqID, resp, runErr); (err != nil) != tc.wantErr {
+				t.Errorf("exitError = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestRunUsageErrors(t *testing.T) {
 	tests := []struct {
 		name string

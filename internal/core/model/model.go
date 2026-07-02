@@ -129,8 +129,11 @@ type RequestDef struct {
 	Auth        *AuthConfig  `yaml:"auth,omitempty" json:"authRef"`
 	// Perf is the optional load-test config attached to this request, versioned
 	// with it in the same YAML file (see internal/core/model/perf.go).
-	Perf     *PerfConfig `yaml:"perf,omitempty" json:"perf,omitempty"`
-	OrderKey string      `yaml:"orderKey" json:"orderKey"`
+	Perf *PerfConfig `yaml:"perf,omitempty" json:"perf,omitempty"`
+	// Assertions are declarative response tests versioned with the request
+	// (see internal/core/model/assert.go); evaluated on every run.
+	Assertions []Assertion `yaml:"assertions,omitempty" json:"assertions,omitempty"`
+	OrderKey   string      `yaml:"orderKey" json:"orderKey"`
 }
 
 type Environment struct {
@@ -154,6 +157,9 @@ type ResponseData struct {
 	TimingMs   int64      `json:"timingMs"`
 	Timestamp  string     `json:"timestamp"`
 	Error      string     `json:"error,omitempty"`
+	// AssertionResults holds the outcome of the request's declarative
+	// assertions against this response (empty when the request has none).
+	AssertionResults []AssertionResult `json:"assertionResults,omitempty"`
 }
 
 type HistoryEntry struct {

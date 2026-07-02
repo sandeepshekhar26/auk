@@ -32,7 +32,27 @@ export interface RequestDef {
   body: RequestBody | null
   authRef: AuthConfig | null
   perf?: PerfConfig | null
+  assertions?: Assertion[] | null
   orderKey: string
+}
+
+export type AssertionSource = 'status' | 'body' | 'header' | 'responseTime'
+export type AssertionOperator = 'eq' | 'neq' | 'contains' | 'exists' | 'notExists' | 'lt' | 'gt' | 'matches'
+
+export interface Assertion {
+  source: AssertionSource
+  path?: string
+  name?: string
+  operator: AssertionOperator
+  value?: string
+  enabled: boolean
+}
+
+export interface AssertionResult {
+  assertion: Assertion
+  passed: boolean
+  actual: string
+  error?: string
 }
 
 export type PerfExecutor = 'constant-vus' | 'ramping-vus'
@@ -135,6 +155,7 @@ export interface ResponseData {
   timingMs: number
   timestamp: string
   error?: string
+  assertionResults?: AssertionResult[]
 }
 
 export interface HistoryEntry {

@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"apitool/internal/assert"
 	"apitool/internal/auth"
 	"apitool/internal/core"
+	"apitool/internal/core/model"
 	graphqlprotocol "apitool/internal/protocols/graphql"
 	grpcprotocol "apitool/internal/protocols/grpc"
 	httpprotocol "apitool/internal/protocols/http"
@@ -44,6 +46,7 @@ func NewEngine(dir string) (*core.Engine, *storage.FileStore, error) {
 
 	engine := core.NewEngine(store, nil, auth.New(), nil)
 	engine.Templater = templating.New(engine)
+	engine.Asserter = asserter{}
 	engine.RegisterProtocol(httpprotocol.New())
 	engine.RegisterProtocol(wsprotocol.New())
 	engine.RegisterProtocol(sseprotocol.New())
@@ -51,4 +54,12 @@ func NewEngine(dir string) (*core.Engine, *storage.FileStore, error) {
 	engine.RegisterProtocol(grpcprotocol.New())
 
 	return engine, store, nil
+}
+
+// asserter adapts internal/assert to core.Asserter, keeping the assert
+// package out of core's imports.
+type asserter struct{}
+
+func (asserter) Evaluate(assertions []model.Assertion, resp model.ResponseData) []model.AssertionResult {
+	return assert.Evaluate(assertions, resp)
 }

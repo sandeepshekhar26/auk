@@ -46,6 +46,13 @@ type AuthApplier interface {
 	Apply(ctx context.Context, auth model.AuthConfig, req ResolvedRequest) (ResolvedRequest, error)
 }
 
+// Asserter evaluates a request's declarative assertions against a response.
+// Optional (engine.Asserter may be nil) and kept an interface so core doesn't
+// import the assert package — the adapter (appcore) injects it.
+type Asserter interface {
+	Evaluate(assertions []model.Assertion, resp model.ResponseData) []model.AssertionResult
+}
+
 // Store is the storage-layer contract the engine depends on (YAML files as
 // source of truth + SQLite cache behind it) — see internal/storage.
 type Store interface {
@@ -97,6 +104,7 @@ type Engine struct {
 	Store     Store
 	Templater Templater
 	Auth      AuthApplier
+	Asserter  Asserter // optional; nil skips assertion evaluation
 	Policy    PolicyEngine
 	Protocols map[model.ProtocolKind]Protocol
 	Sessions  *Registry
@@ -154,6 +162,13 @@ func (e *Engine) RunRequest(ctx context.Context, sessionID model.ID, requestID m
 	resp, err := protocol.Execute(sess.Context(), sess, req, resolved)
 	if err != nil {
 		return resp, err
+	}
+
+	// Evaluate declarative assertions against the response. They ride on the
+	// response object so every consumer (GUI card, CLI exit code, MCP result)
+	// sees the same verdict from the same code path.
+	if e.Asserter != nil && len(req.Assertions) > 0 {
+		resp.AssertionResults = e.Asserter.Evaluate(req.Assertions, resp)
 	}
 
 	if err := e.Store.SaveResponse(resp); err != nil {

@@ -32,4 +32,38 @@ func printResponse(resp model.ResponseData) {
 	fmt.Fprintln(os.Stdout, "body:")
 	os.Stdout.Write(body)
 	fmt.Fprintln(os.Stdout)
+
+	if len(resp.AssertionResults) > 0 {
+		fmt.Fprintln(os.Stdout, "assertions:")
+		for _, r := range resp.AssertionResults {
+			mark := "✓"
+			if !r.Passed {
+				mark = "✗"
+			}
+			desc := assertionLabel(r.Assertion)
+			if r.Error != "" {
+				fmt.Fprintf(os.Stdout, "  %s %s (%s)\n", mark, desc, r.Error)
+			} else {
+				fmt.Fprintf(os.Stdout, "  %s %s [actual: %s]\n", mark, desc, r.Actual)
+			}
+		}
+	}
+}
+
+// assertionLabel renders an assertion as a compact human-readable line,
+// e.g. `body.user.id gt 10` or `status eq 200`.
+func assertionLabel(a model.Assertion) string {
+	target := string(a.Source)
+	switch a.Source {
+	case model.AssertBody:
+		if a.Path != "" {
+			target = "body." + a.Path
+		}
+	case model.AssertHeader:
+		target = "header[" + a.Name + "]"
+	}
+	if a.Value == "" {
+		return fmt.Sprintf("%s %s", target, a.Operator)
+	}
+	return fmt.Sprintf("%s %s %s", target, a.Operator, a.Value)
 }
