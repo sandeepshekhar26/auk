@@ -3,25 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/google/uuid"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"apitool/internal/auth"
+	"apitool/internal/appcore"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
 	"apitool/internal/importer"
 	"apitool/internal/perf"
-	graphqlprotocol "apitool/internal/protocols/graphql"
-	grpcprotocol "apitool/internal/protocols/grpc"
-	httpprotocol "apitool/internal/protocols/http"
-	sseprotocol "apitool/internal/protocols/sse"
-	wsprotocol "apitool/internal/protocols/ws"
 	"apitool/internal/storage"
-	"apitool/internal/templating"
 )
 
 // App is the Wails-bound adapter over the headless core.Engine. Every method
@@ -39,41 +31,20 @@ type App struct {
 }
 
 func NewApp() *App {
-	store, err := storage.NewFileStore(defaultWorkspaceDir())
+	// The GUI builds the exact same engine (same store dir, same protocols,
+	// same chain-resolver wiring) that cmd/cli and cmd/mcp build, via the
+	// shared appcore.NewEngine — one construction path, so behavior can't
+	// drift between the three consumers (docs/02-architecture.md §1).
+	engine, store, err := appcore.NewEngine(appcore.DefaultWorkspaceDir())
 	if err != nil {
-		// NewFileStore only fails on an unwritable/unreadable rootDir (mkdir
-		// or an existing-workspace YAML load error) — both are unrecoverable
-		// for a GUI app that has nowhere else to persist to, so fail fast
-		// with a clear message instead of limping along with a nil store.
+		// Only fails on an unwritable/unreadable rootDir — unrecoverable for a
+		// GUI app that has nowhere else to persist to, so fail fast.
 		panic(fmt.Errorf("init file store: %w", err))
 	}
-
-	// Engine is constructed first (with a nil Templater) because
-	// templating.New needs the engine itself as its chain resolver for
-	// response('Name').path auto-send refs — see internal/core/chaining.go.
-	engine := core.NewEngine(store, nil, auth.New(), nil)
-	engine.Templater = templating.New(engine)
-	engine.RegisterProtocol(httpprotocol.New())
-	engine.RegisterProtocol(wsprotocol.New())
-	engine.RegisterProtocol(sseprotocol.New())
-	engine.RegisterProtocol(graphqlprotocol.New())
-	engine.RegisterProtocol(grpcprotocol.New())
 
 	app := &App{store: store, engine: engine, perfCancels: map[string]context.CancelFunc{}}
 	app.seedDemoData()
 	return app
-}
-
-// defaultWorkspaceDir is ~/.apitool/workspace — a sibling of the
-// ~/.apitool/history.jsonl path internal/storage.NewFileStore already
-// defaults to, so everything this app persists lives under one well-known
-// directory. Falls back to a "workspace" dir next to the binary's cwd if the
-// home directory can't be resolved (e.g. a locked-down sandbox).
-func defaultWorkspaceDir() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".apitool", "workspace")
-	}
-	return "workspace"
 }
 
 func (a *App) startup(ctx context.Context) {
