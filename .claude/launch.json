@@ -6,6 +6,12 @@
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": ["/Users/skumar/repos/api-tool/frontend/.claude/dev.sh"],
       "port": 5173
+    },
+    {
+      "name": "wails-dev",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["/Users/skumar/repos/api-tool/.claude/wails-dev.sh"],
+      "port": 34115
     }
   ]
 }

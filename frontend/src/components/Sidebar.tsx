@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { appState, openTab, sidebarFilter, setSidebarFilter } from '../lib/store'
+import { createRequest } from '../lib/data'
 import type { Folder, RequestDef } from '../types'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
@@ -134,7 +135,15 @@ export default function Sidebar() {
       </div>
       <div class="flex-1 overflow-y-auto px-1 pb-2">
         <Show when={isEmpty()}>
-          <p class="px-2 py-4 text-xs text-neutral-600">No requests yet. Press ⌘N to create one.</p>
+          <div class="flex flex-col items-start gap-2 px-2 py-4">
+            <p class="text-xs text-neutral-600">No requests yet.</p>
+            <button
+              class="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-500"
+              onClick={() => void createRequest()}
+            >
+              + New Request
+            </button>
+          </div>
         </Show>
         <Show when={!isEmpty() && noMatches()}>
           <p class="px-2 py-4 text-xs text-neutral-600">No matches.</p>

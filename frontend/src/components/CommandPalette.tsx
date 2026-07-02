@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { appState, commandPaletteOpen, setCommandPaletteOpen, openTab, setShortcutSheetOpen } from '../lib/store'
+import { createRequest } from '../lib/data'
 import type { CommandItem } from '../types'
 
 export default function CommandPalette() {
@@ -7,6 +8,15 @@ export default function CommandPalette() {
   let inputRef: HTMLInputElement | undefined
 
   const items = createMemo<CommandItem[]>(() => {
+    const actionItems: CommandItem[] = [
+      {
+        id: 'action:new-request',
+        title: 'New Request',
+        subtitle: '⌘N',
+        group: 'action',
+        run: () => void createRequest(),
+      },
+    ]
     const requestItems: CommandItem[] = appState.requests.map((r) => ({
       id: `req:${r.id}`,
       title: r.name,
@@ -14,9 +24,10 @@ export default function CommandPalette() {
       group: 'request',
       run: () => openTab(r.id),
     }))
+    const all = [...actionItems, ...requestItems]
     const q = query().trim().toLowerCase()
-    if (!q) return requestItems
-    return requestItems.filter((i) => i.title.toLowerCase().includes(q) || i.subtitle?.toLowerCase().includes(q))
+    if (!q) return all
+    return all.filter((i) => i.title.toLowerCase().includes(q) || i.subtitle?.toLowerCase().includes(q))
   })
 
   function close() {

@@ -1,5 +1,6 @@
-import { Show, createMemo, createSignal, For } from 'solid-js'
+import { Show, createEffect, createMemo, createSignal, For, on } from 'solid-js'
 import { appState, setAppState } from '../lib/store'
+import { saveRequestDebounced } from '../lib/data'
 import type { KeyValue } from '../types'
 import KeyValueTable from './KeyValueTable'
 import BodyEditor from './BodyEditor'
@@ -20,6 +21,32 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
 
   const activeIndex = createMemo(() => appState.requests.findIndex((r) => r.id === appState.activeTabId))
   const active = createMemo(() => appState.requests.find((r) => r.id === appState.activeTabId))
+
+  // Persist any edit to the active request (method/url/headers/params/body/
+  // auth all flow through this same store object) — debounced so typing
+  // doesn't fire one backend call per keystroke.
+  //
+  // IMPORTANT: `active` is a `.find()`-based memo whose predicate only
+  // reads `r.id`, so Solid's fine-grained tracking only subscribes this
+  // effect to `.id` — editing `.url`/`.headers`/etc. would silently never
+  // re-fire it (found via manual browser testing: typing a URL updated the
+  // input on screen via direct JSX property access, but nothing was ever
+  // sent to the backend). JSON.stringify walks every nested field, which
+  // forces a read-dependency on all of them, so any real edit re-triggers
+  // this effect; `on()` still no-ops if the stringified content is
+  // unchanged.
+  createEffect(
+    on(
+      () => {
+        const req = active()
+        return req ? JSON.stringify(req) : null
+      },
+      (snapshot) => {
+        if (snapshot) saveRequestDebounced(JSON.parse(snapshot))
+      },
+      { defer: true },
+    ),
+  )
 
   function setRow(field: 'headers' | 'params', index: number, key: keyof KeyValue, value: string | boolean) {
     const idx = activeIndex()

@@ -110,6 +110,11 @@ func (a *App) ListRequests(workspaceID string) []model.RequestDef {
 	return a.store.ListRequests(workspaceID)
 }
 
+// ListFolders is bound to the frontend.
+func (a *App) ListFolders(workspaceID string) []model.Folder {
+	return a.store.ListFolders(workspaceID)
+}
+
 // ListEnvironments is bound to the frontend.
 func (a *App) ListEnvironments(workspaceID string) []model.Environment {
 	return a.store.ListEnvironments(workspaceID)
