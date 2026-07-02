@@ -1,9 +1,11 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
 import { json } from '@codemirror/lang-json'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
+import { unifiedMergeView } from '@codemirror/merge'
 import type { Assertion, AssertionResult, ResponseData } from '../types'
 import { appState } from '../lib/store'
 
@@ -58,9 +60,30 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   const [tab, setTab] = createSignal<Tab>('body')
   const [bodyMode, setBodyMode] = createSignal<BodyMode>('pretty')
   const [copied, setCopied] = createSignal(false)
+  const [diffMode, setDiffMode] = createSignal(false)
+  const [hasPrior, setHasPrior] = createSignal(false)
 
   let editorHost: HTMLDivElement | undefined
   let view: EditorView | undefined
+  // The previous response body for the SAME request, captured the moment a new
+  // response replaces it — powers "diff vs previous" without a backend archive
+  // (durable cross-session history diffing is a noted follow-up).
+  let priorBody = ''
+
+  createEffect(
+    on(
+      () => props.response,
+      (resp, prevResp) => {
+        if (resp && prevResp && resp.requestId === prevResp.requestId) {
+          priorBody = decodeBody(prevResp.bodyBase64)
+        } else {
+          priorBody = ''
+          setDiffMode(false)
+        }
+        setHasPrior(priorBody.length > 0)
+      },
+    ),
+  )
 
   const rawBody = createMemo(() => decodeBody(props.response?.bodyBase64 ?? ''))
   const jsonInfo = createMemo(() => tryPrettyJson(rawBody()))
@@ -75,6 +98,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   createEffect(() => {
     const text = displayText()
     const isJsonView = jsonInfo().isJson
+    const showDiff = diffMode() && hasPrior()
     if (!editorHost) return
 
     if (view) {
@@ -87,11 +111,16 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
         doc: text,
         extensions: [
           lineNumbers(),
-          keymap.of(defaultKeymap),
+          highlightSelectionMatches(),
+          search({ top: true }),
+          keymap.of([...searchKeymap, ...defaultKeymap]),
           EditorView.editable.of(false),
           EditorState.readOnly.of(true),
           syntaxHighlighting(defaultHighlightStyle),
           ...(isJsonView ? [json()] : []),
+          // In diff mode, overlay a unified diff against the previous response
+          // body for this request (green = added, red = removed).
+          ...(showDiff ? [unifiedMergeView({ original: priorBody, mergeControls: false })] : []),
           EditorView.theme({
             '&': { backgroundColor: 'transparent', height: '100%', fontSize: '12px' },
             '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, monospace', overflow: 'auto' },
@@ -104,6 +133,13 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
       parent: editorHost,
     })
   })
+
+  function openSearch() {
+    if (view) {
+      view.focus()
+      openSearchPanel(view)
+    }
+  }
 
   onCleanup(() => {
     view?.destroy()
@@ -207,28 +243,52 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                   <span class="ml-1 text-ink-faint">{res().headers.length}</span>
                 </button>
 
-                <Show when={tab() === 'body' && jsonInfo().isJson}>
-                  <div class="ml-auto flex items-center gap-1 rounded bg-field p-0.5">
+                <Show when={tab() === 'body'}>
+                  <div class="ml-auto flex items-center gap-1">
                     <button
-                      class="rounded px-2 py-0.5 text-[11px]"
-                      classList={{
-                        'bg-elevated text-ink': bodyMode() === 'pretty',
-                        'text-ink-muted hover:text-ink-dim': bodyMode() !== 'pretty',
-                      }}
-                      onClick={() => setBodyMode('pretty')}
+                      class="rounded px-2 py-0.5 text-[11px] text-ink-muted hover:bg-raised hover:text-ink-dim"
+                      onClick={openSearch}
+                      title="Search in body (⌘F)"
                     >
-                      Pretty
+                      Search
                     </button>
-                    <button
-                      class="rounded px-2 py-0.5 text-[11px]"
-                      classList={{
-                        'bg-elevated text-ink': bodyMode() === 'raw',
-                        'text-ink-muted hover:text-ink-dim': bodyMode() !== 'raw',
-                      }}
-                      onClick={() => setBodyMode('raw')}
-                    >
-                      Raw
-                    </button>
+                    <Show when={hasPrior()}>
+                      <button
+                        class="rounded px-2 py-0.5 text-[11px]"
+                        classList={{
+                          'bg-elevated text-ink': diffMode(),
+                          'text-ink-muted hover:bg-raised hover:text-ink-dim': !diffMode(),
+                        }}
+                        onClick={() => setDiffMode((v) => !v)}
+                        title="Diff against the previous response for this request"
+                      >
+                        Diff
+                      </button>
+                    </Show>
+                    <Show when={jsonInfo().isJson && !diffMode()}>
+                      <div class="flex items-center gap-1 rounded bg-field p-0.5">
+                        <button
+                          class="rounded px-2 py-0.5 text-[11px]"
+                          classList={{
+                            'bg-elevated text-ink': bodyMode() === 'pretty',
+                            'text-ink-muted hover:text-ink-dim': bodyMode() !== 'pretty',
+                          }}
+                          onClick={() => setBodyMode('pretty')}
+                        >
+                          Pretty
+                        </button>
+                        <button
+                          class="rounded px-2 py-0.5 text-[11px]"
+                          classList={{
+                            'bg-elevated text-ink': bodyMode() === 'raw',
+                            'text-ink-muted hover:text-ink-dim': bodyMode() !== 'raw',
+                          }}
+                          onClick={() => setBodyMode('raw')}
+                        >
+                          Raw
+                        </button>
+                      </div>
+                    </Show>
                   </div>
                 </Show>
               </div>
