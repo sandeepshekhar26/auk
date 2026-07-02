@@ -141,6 +141,52 @@ func (a *App) ImportCurl(command string) (model.RequestDef, error) {
 	return importer.ParseCurl(command)
 }
 
+// DetectImportFormat classifies pasted content ("curl" | "openapi" |
+// "postman" | "") so the import UI can preview what it's about to create.
+func (a *App) DetectImportFormat(content string) string {
+	return importer.Detect(content)
+}
+
+// ImportCollection auto-detects the format of content (cURL, OpenAPI, or
+// Postman) and persists it as a NEW workspace: it mints a workspace id,
+// re-parents every folder/request/environment onto it, assigns merge-safe
+// order keys, and writes them all to the file store. Returns the new
+// workspace id so the frontend can switch to it.
+func (a *App) ImportCollection(content string) (string, error) {
+	res, err := importer.Import(content)
+	if err != nil {
+		return "", err
+	}
+
+	wsID := uuid.NewString()
+	if err := a.store.PutWorkspace(model.Workspace{ID: wsID, Name: res.WorkspaceName, OrderKey: "a0"}); err != nil {
+		return "", err
+	}
+
+	for _, f := range res.Folders {
+		f.WorkspaceID = wsID
+		if err := a.store.PutFolder(f); err != nil {
+			return "", fmt.Errorf("import folder %q: %w", f.Name, err)
+		}
+	}
+	for _, r := range res.Requests {
+		r.WorkspaceID = wsID
+		if err := a.store.PutRequest(r); err != nil {
+			return "", fmt.Errorf("import request %q: %w", r.Name, err)
+		}
+	}
+	for _, e := range res.Environments {
+		e.WorkspaceID = wsID
+		// Imported environments carry no secrets (values came from a plaintext
+		// spec/collection), so no secretValues map is needed.
+		if err := a.store.PutEnvironment(e, nil); err != nil {
+			return "", fmt.Errorf("import environment %q: %w", e.Name, err)
+		}
+	}
+
+	return wsID, nil
+}
+
 // CreateEnvironment persists a new environment. secretValues carries pending
 // plaintext values for any variable name listed in env.Secrets; FileStore
 // peels those off into the OS keychain and never writes them to the YAML

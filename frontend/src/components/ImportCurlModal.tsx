@@ -1,56 +1,71 @@
 import { Show, createSignal } from 'solid-js'
-import { appState, importModalOpen, setImportModalOpen, openTab } from '../lib/store'
+import { appState, setAppState, importModalOpen, setImportModalOpen, openTab } from '../lib/store'
 import { models, wails } from '../lib/wails'
-import { loadWorkspaceData } from '../lib/data'
+import { loadWorkspaces, loadWorkspaceData } from '../lib/data'
 import type { RequestDef } from '../types'
 
+const FORMAT_LABEL: Record<string, string> = {
+  curl: 'cURL command',
+  openapi: 'OpenAPI / Swagger spec',
+  postman: 'Postman collection',
+}
+
+// ImportCurlModal is the general Import surface (name kept for the store
+// signal it's wired to): paste a cURL command, an OpenAPI spec, or a Postman
+// collection and it auto-detects. cURL creates one request; OpenAPI/Postman
+// create a whole new workspace of folders + requests + environments.
 export default function ImportCurlModal() {
   const [raw, setRaw] = createSignal('')
-  const [preview, setPreview] = createSignal<RequestDef | null>(null)
+  const [format, setFormat] = createSignal('')
   const [error, setError] = createSignal<string | null>(null)
   const [importing, setImporting] = createSignal(false)
 
   function close() {
     setImportModalOpen(false)
     setRaw('')
-    setPreview(null)
+    setFormat('')
     setError(null)
   }
 
-  async function handlePreview() {
-    const command = raw().trim()
-    if (!command) return
+  async function onInput(value: string) {
+    setRaw(value)
     setError(null)
+    if (!value.trim()) {
+      setFormat('')
+      return
+    }
     try {
-      const parsed = await wails.ImportCurl(command)
-      setPreview(parsed as unknown as RequestDef)
-    } catch (err) {
-      setPreview(null)
-      setError(err instanceof Error ? err.message : String(err))
+      setFormat(await wails.DetectImportFormat(value))
+    } catch {
+      setFormat('')
     }
   }
 
   async function handleImport() {
+    const content = raw().trim()
+    if (!content) return
     setImporting(true)
     setError(null)
     try {
-      let parsed = preview()
-      if (!parsed) {
-        parsed = (await wails.ImportCurl(raw().trim())) as unknown as RequestDef
+      if (format() === 'curl') {
+        // Single request: parse, scope to the active workspace, persist, open.
+        const parsed = (await wails.ImportCurl(content)) as unknown as RequestDef
+        const req: RequestDef = {
+          ...parsed,
+          id: parsed.id || crypto.randomUUID(),
+          workspaceId: appState.activeWorkspaceId ?? parsed.workspaceId,
+          name: parsed.name || `${parsed.method} ${parsed.url}`,
+        }
+        await wails.CreateRequest(models.RequestDef.createFrom(req))
+        if (appState.activeWorkspaceId) await loadWorkspaceData(appState.activeWorkspaceId)
+        openTab(req.id)
+      } else {
+        // Collection: creates a whole new workspace; switch to it.
+        const newWorkspaceId = await wails.ImportCollection(content)
+        await loadWorkspaces()
+        setAppState('activeWorkspaceId', newWorkspaceId)
+        await loadWorkspaceData(newWorkspaceId)
       }
-      // ImportCurl only parses — it does not persist. Fill in the workspace
-      // scoping the parser can't know about, persist through the same
-      // CreateRequest path as the "+ New Request" flow, then reload from the
-      // backend so the store reflects what's actually on disk.
-      const req: RequestDef = {
-        ...parsed,
-        id: parsed.id || crypto.randomUUID(),
-        workspaceId: appState.activeWorkspaceId ?? parsed.workspaceId,
-        name: parsed.name || `${parsed.method} ${parsed.url}`,
-      }
-      await wails.CreateRequest(models.RequestDef.createFrom(req))
-      if (appState.activeWorkspaceId) await loadWorkspaceData(appState.activeWorkspaceId)
-      openTab(req.id)
       close()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -67,59 +82,52 @@ export default function ImportCurlModal() {
           onClick={(e) => e.stopPropagation()}
         >
           <div class="border-b border-edge px-4 py-3">
-            <h2 class="text-sm font-semibold text-ink">Import from cURL</h2>
-            <p class="mt-0.5 text-xs text-ink-muted">Paste a curl command to create a new request.</p>
+            <h2 class="text-sm font-semibold text-ink">Import</h2>
+            <p class="mt-0.5 text-xs text-ink-muted">
+              Paste a cURL command, an OpenAPI/Swagger spec, or a Postman collection — the format is detected automatically.
+            </p>
           </div>
 
           <div class="flex flex-col gap-3 px-4 py-3">
             <textarea
               autofocus
-              rows={8}
+              rows={10}
               spellcheck={false}
               class="w-full resize-none rounded border border-edge bg-app p-2 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
-              placeholder={"curl -X POST https://api.example.com/users \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\":\"jane\"}'"}
+              placeholder={'curl https://api.example.com/users\n\n— or paste an OpenAPI spec / Postman collection JSON —'}
               value={raw()}
-              onInput={(e) => {
-                setRaw(e.currentTarget.value)
-                setPreview(null)
-                setError(null)
-              }}
+              onInput={(e) => onInput(e.currentTarget.value)}
             />
+
+            <div class="flex items-center gap-2 text-xs">
+              <Show when={raw().trim()}>
+                <Show
+                  when={format()}
+                  fallback={<span class="text-warn">Unrecognized format</span>}
+                >
+                  <span class="rounded bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-contrast">
+                    Detected: {FORMAT_LABEL[format()] ?? format()}
+                  </span>
+                </Show>
+              </Show>
+            </div>
 
             <Show when={error()}>
               <p class="rounded border border-danger-edge bg-danger-bg/40 px-2 py-1.5 text-xs text-danger">{error()}</p>
             </Show>
-
-            <Show when={preview()}>
-              {(p) => (
-                <div class="flex items-center gap-2 rounded border border-edge bg-app px-2 py-1.5 text-xs">
-                  <span class="font-mono font-semibold text-accent-fg">{p().method}</span>
-                  <span class="flex-1 truncate font-mono text-ink-dim">{p().url}</span>
-                </div>
-              )}
-            </Show>
           </div>
 
-          <div class="flex items-center justify-between gap-2 border-t border-edge px-4 py-3">
-            <button
-              class="text-xs text-ink-muted hover:text-ink-dim"
-              onClick={handlePreview}
-              disabled={!raw().trim()}
-            >
-              Preview
+          <div class="flex items-center justify-end gap-2 border-t border-edge px-4 py-3">
+            <button class="rounded px-3 py-1.5 text-xs text-ink-muted hover:bg-raised" onClick={close}>
+              Cancel
             </button>
-            <div class="flex items-center gap-2">
-              <button class="rounded px-3 py-1.5 text-xs text-ink-muted hover:bg-raised" onClick={close}>
-                Cancel
-              </button>
-              <button
-                class="rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!raw().trim() || importing()}
-                onClick={handleImport}
-              >
-                {importing() ? 'Importing…' : 'Import'}
-              </button>
-            </div>
+            <button
+              class="rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!raw().trim() || !format() || importing()}
+              onClick={handleImport}
+            >
+              {importing() ? 'Importing…' : 'Import'}
+            </button>
           </div>
         </div>
       </div>

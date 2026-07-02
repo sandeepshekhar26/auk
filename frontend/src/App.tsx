@@ -111,7 +111,7 @@ export default function App() {
           class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
           onClick={() => setImportModalOpen(true)}
         >
-          Import cURL
+          Import
         </button>
         <button
           class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
