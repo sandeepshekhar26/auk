@@ -1,4 +1,4 @@
-package main
+package mcpserver
 
 import (
 	"context"
@@ -22,7 +22,7 @@ func newTestServerAndClient(t *testing.T, dir string) *mcp.ClientSession {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-	srv := newServer(engine, store)
+	srv := New(engine, store)
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
 	ct, st := mcp.NewInMemoryTransports()

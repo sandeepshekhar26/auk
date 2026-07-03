@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -12,6 +16,7 @@ import (
 	"apitool/internal/core"
 	"apitool/internal/core/model"
 	"apitool/internal/importer"
+	"apitool/internal/mcpserver"
 	"apitool/internal/perf"
 	"apitool/internal/storage"
 )
@@ -28,6 +33,16 @@ type App struct {
 	// perfCancels lets StopPerfTest cancel an in-flight k6 run by request id.
 	perfMu      sync.Mutex
 	perfCancels map[string]context.CancelFunc
+
+	// Embedded MCP server state (Settings → MCP Server).
+	mcpMu    sync.Mutex
+	mcpHTTP  *mcpserver.HTTPServer
+	mcpError string
+
+	// approvals tracks MCP-initiated mutating requests waiting on the in-app
+	// Allow/Deny modal, keyed by approval id.
+	approvalMu sync.Mutex
+	approvals  map[string]chan bool
 }
 
 func NewApp() *App {
@@ -42,13 +57,30 @@ func NewApp() *App {
 		panic(fmt.Errorf("init file store: %w", err))
 	}
 
-	app := &App{store: store, engine: engine, perfCancels: map[string]context.CancelFunc{}}
+	app := &App{
+		store:       store,
+		engine:      engine,
+		perfCancels: map[string]context.CancelFunc{},
+		approvals:   map[string]chan bool{},
+	}
+	// Replace the default allow-all policy: GUI/CLI/chain origins stay
+	// unrestricted, but MCP-initiated mutating requests must be approved in
+	// the app (docs/02-architecture.md §MCP — user-presence gating at the
+	// Dispatch chokepoint, which scripts and chained sends also pass through).
+	engine.Policy = &approvalPolicy{app: app}
 	app.seedDemoData()
 	return app
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	if a.GetSettings().MCPEnabled {
+		if err := a.startMCP(); err != nil {
+			a.mcpMu.Lock()
+			a.mcpError = err.Error()
+			a.mcpMu.Unlock()
+		}
+	}
 }
 
 // seedDemoData gives a first-run user something real to look at and send.
@@ -285,5 +317,187 @@ func (a *App) StopPerfTest(requestID string) {
 	a.perfMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+}
+
+// ---- Embedded MCP server (Settings → MCP Server) ----
+
+// defaultMCPPort is fixed (not ephemeral) so a saved `claude mcp add` config
+// keeps working across app restarts.
+const defaultMCPPort = 8724
+
+// mcpTokenPath stores the bearer token, generated once and reused across
+// restarts (0600 — it guards the loopback endpoint, so it must not change on
+// every launch or saved MCP client configs would break).
+func mcpTokenPath() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".apitool", "mcp-token")
+	}
+	return "mcp-token"
+}
+
+func loadOrCreateMCPToken() (string, error) {
+	path := mcpTokenPath()
+	if b, err := os.ReadFile(path); err == nil {
+		if tok := string(bytes.TrimSpace(b)); tok != "" {
+			return tok, nil
+		}
+	}
+	tok, err := mcpserver.NewToken()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(tok), 0o600); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+func (a *App) startMCP() error {
+	a.mcpMu.Lock()
+	defer a.mcpMu.Unlock()
+	if a.mcpHTTP != nil {
+		return nil
+	}
+	token, err := loadOrCreateMCPToken()
+	if err != nil {
+		return fmt.Errorf("mcp token: %w", err)
+	}
+	port := a.GetSettings().MCPPort
+	if port == 0 {
+		port = defaultMCPPort
+	}
+	hs, err := mcpserver.StartHTTP(mcpserver.New(a.engine, a.store), port, token)
+	if err != nil {
+		return err
+	}
+	a.mcpHTTP = hs
+	a.mcpError = ""
+	return nil
+}
+
+func (a *App) stopMCP() {
+	a.mcpMu.Lock()
+	defer a.mcpMu.Unlock()
+	if a.mcpHTTP != nil {
+		a.mcpHTTP.Stop()
+		a.mcpHTTP = nil
+	}
+}
+
+// MCPStatus is what the Settings UI renders.
+type MCPStatus struct {
+	Running        bool   `json:"running"`
+	URL            string `json:"url"`
+	Token          string `json:"token"`
+	ConnectCommand string `json:"connectCommand"`
+	Error          string `json:"error,omitempty"`
+}
+
+// GetMCPStatus reports the embedded server's state, including the exact
+// `claude mcp add` command to paste.
+func (a *App) GetMCPStatus() MCPStatus {
+	a.mcpMu.Lock()
+	defer a.mcpMu.Unlock()
+	st := MCPStatus{Error: a.mcpError}
+	if a.mcpHTTP != nil {
+		st.Running = true
+		st.URL = a.mcpHTTP.URL
+		st.Token = a.mcpHTTP.Token
+		st.ConnectCommand = fmt.Sprintf(
+			`claude mcp add --transport http apitool %s --header "Authorization: Bearer %s"`,
+			a.mcpHTTP.URL, a.mcpHTTP.Token,
+		)
+	}
+	return st
+}
+
+// SetMCPEnabled starts/stops the embedded server and persists the choice so
+// it survives restarts. Returns the resulting status.
+func (a *App) SetMCPEnabled(enabled bool) MCPStatus {
+	s := a.GetSettings()
+	s.MCPEnabled = enabled
+	_ = storage.SaveSettings(storage.DefaultSettingsPath(), s)
+
+	if enabled {
+		if err := a.startMCP(); err != nil {
+			a.mcpMu.Lock()
+			a.mcpError = err.Error()
+			a.mcpMu.Unlock()
+		}
+	} else {
+		a.stopMCP()
+	}
+	return a.GetMCPStatus()
+}
+
+// ---- MCP approval gating ----
+
+// mutatingMethods are the HTTP methods that require user presence when an
+// MCP client initiates the request. Reads (GET/HEAD/OPTIONS) pass freely.
+var mutatingMethods = map[string]bool{
+	"POST": true, "PUT": true, "PATCH": true, "DELETE": true,
+}
+
+// approvalPolicy is the engine's PolicyEngine for the GUI process: human-
+// initiated origins pass, MCP-initiated mutating requests block on an in-app
+// Allow/Deny modal (60s timeout → deny). Because this sits at the engine's
+// Dispatch chokepoint, chained auto-sends triggered by an MCP run are gated
+// too — an agent can't launder a DELETE through a response() reference.
+type approvalPolicy struct {
+	app *App
+}
+
+func (p *approvalPolicy) Authorize(ctx context.Context, dc core.DispatchContext) (core.Decision, error) {
+	if dc.Origin != "mcp" && dc.Origin != "chain-mcp" {
+		return core.Decision{Allow: true}, nil
+	}
+	if !mutatingMethods[dc.Method] {
+		return core.Decision{Allow: true}, nil
+	}
+
+	id := uuid.NewString()
+	ch := make(chan bool, 1)
+	p.app.approvalMu.Lock()
+	p.app.approvals[id] = ch
+	p.app.approvalMu.Unlock()
+	defer func() {
+		p.app.approvalMu.Lock()
+		delete(p.app.approvals, id)
+		p.app.approvalMu.Unlock()
+	}()
+
+	wailsruntime.EventsEmit(p.app.ctx, "mcp:approval", map[string]string{
+		"id":     id,
+		"method": dc.Method,
+		"url":    dc.URL,
+	})
+
+	select {
+	case allowed := <-ch:
+		if allowed {
+			return core.Decision{Allow: true}, nil
+		}
+		return core.Decision{Allow: false, Reason: "denied by user"}, nil
+	case <-time.After(60 * time.Second):
+		return core.Decision{Allow: false, Reason: "approval timed out (no user response)"}, nil
+	case <-ctx.Done():
+		return core.Decision{Allow: false, Reason: "request cancelled"}, nil
+	}
+}
+
+// RespondMCPApproval resolves a pending approval from the modal.
+func (a *App) RespondMCPApproval(id string, allow bool) {
+	a.approvalMu.Lock()
+	ch := a.approvals[id]
+	a.approvalMu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- allow:
+		default:
+		}
 	}
 }

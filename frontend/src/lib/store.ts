@@ -41,6 +41,15 @@ export const [shortcutSheetOpen, setShortcutSheetOpen] = createSignal(false)
 export const [streamConsoleOpen, setStreamConsoleOpen] = createSignal(false)
 export const [settingsOpen, setSettingsOpen] = createSignal(false)
 
+// Pending MCP approval prompts (agent-initiated mutating requests waiting on
+// Allow/Deny). A queue: multiple agent calls can stack up.
+export interface MCPApproval {
+  id: string
+  method: string
+  url: string
+}
+export const [mcpApprovals, setMcpApprovals] = createSignal<MCPApproval[]>([])
+
 export function openTab(requestId: string) {
   setAppState('openTabIds', (ids) => (ids.includes(requestId) ? ids : [...ids, requestId]))
   setAppState('activeTabId', requestId)

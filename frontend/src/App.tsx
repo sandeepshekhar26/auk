@@ -11,10 +11,12 @@ import ImportCurlModal from './components/ImportCurlModal'
 import StreamConsole from './components/StreamConsole'
 import HistoryPanel from './components/HistoryPanel'
 import SettingsModal from './components/SettingsModal'
-import { appState, setImportModalOpen, setSettingsOpen, streamConsoleOpen, setStreamConsoleOpen } from './lib/store'
-import { wails } from './lib/wails'
+import MCPApprovalModal from './components/MCPApprovalModal'
+import { appState, setImportModalOpen, setSettingsOpen, streamConsoleOpen, setStreamConsoleOpen, setMcpApprovals } from './lib/store'
+import { events, wails } from './lib/wails'
 import { createRequest, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
+import type { MCPApproval } from './lib/store'
 import type { ResponseData } from './types'
 
 export default function App() {
@@ -28,6 +30,12 @@ export default function App() {
     // settings-load failure must never block data loading.
     initTheme().catch(() => {})
     loadAll().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))
+    // App-scoped MCP approval listener (see MCPApprovalModal for why it lives
+    // here, not in the leaf component). Never cleaned up — the app owns it for
+    // its whole lifetime.
+    events.EventsOn('mcp:approval', (payload: MCPApproval) => {
+      if (payload?.id) setMcpApprovals((q) => [...q, payload])
+    })
   })
 
   // Re-load requests/folders/environments whenever the active workspace
@@ -164,6 +172,7 @@ export default function App() {
       <ImportCurlModal />
       <StreamConsole />
       <SettingsModal />
+      <MCPApprovalModal />
     </div>
   )
 }
