@@ -53,6 +53,19 @@ type Asserter interface {
 	Evaluate(assertions []model.Assertion, resp model.ResponseData) []model.AssertionResult
 }
 
+// Scripter runs a request's optional pre-request script against its already
+// resolved (templated + auth-applied) shape. It runs strictly BEFORE the
+// Dispatch policy check in resolveAndAuthorize — the script can shape the
+// request (e.g. add a computed signature header) but every request it
+// produces still passes through the exact same Authorize() call every other
+// origin does, so this can't become a way to bypass approval gating.
+// Optional (engine.Scripter may be nil) and kept an interface so core
+// doesn't import a JS runtime — the adapter (appcore) injects the sobek-
+// backed implementation from internal/scripting.
+type Scripter interface {
+	RunPreRequest(ctx context.Context, script string, resolved ResolvedRequest) (ResolvedRequest, error)
+}
+
 // Store is the storage-layer contract the engine depends on (YAML files as
 // source of truth + SQLite cache behind it) — see internal/storage.
 type Store interface {
@@ -105,6 +118,7 @@ type Engine struct {
 	Templater Templater
 	Auth      AuthApplier
 	Asserter  Asserter // optional; nil skips assertion evaluation
+	Scripter  Scripter // optional; nil skips pre-request scripting
 	Policy    PolicyEngine
 	Protocols map[model.ProtocolKind]Protocol
 	Sessions  *Registry
@@ -217,6 +231,13 @@ func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, en
 		resolved, err = e.Auth.Apply(ctx, *req.Auth, resolved)
 		if err != nil {
 			return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("apply auth: %w", err)
+		}
+	}
+
+	if e.Scripter != nil && req.PreRequestScript != "" {
+		resolved, err = e.Scripter.RunPreRequest(ctx, req.PreRequestScript, resolved)
+		if err != nil {
+			return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("pre-request script: %w", err)
 		}
 	}
 

@@ -33,6 +33,11 @@ export interface RequestDef {
   authRef: AuthConfig | null
   perf?: PerfConfig | null
   assertions?: Assertion[] | null
+  // A small JS snippet run (internal/scripting, grafana/sobek) after
+  // templating+auth but before the request is sent — ctx.request.
+  // {method,url,headers,body} to read, ctx.setHeader(name, value) to
+  // add/override a header. Empty/absent skips scripting entirely.
+  preRequestScript?: string
   orderKey: string
 }
 

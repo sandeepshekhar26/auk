@@ -133,7 +133,13 @@ type RequestDef struct {
 	// Assertions are declarative response tests versioned with the request
 	// (see internal/core/model/assert.go); evaluated on every run.
 	Assertions []Assertion `yaml:"assertions,omitempty" json:"assertions,omitempty"`
-	OrderKey   string      `yaml:"orderKey" json:"orderKey"`
+	// PreRequestScript is a small JS snippet (run by internal/scripting via
+	// sobek) executed after templating+auth but before the Dispatch policy
+	// check — so it can add/override headers (computed signatures,
+	// idempotency keys) on the SAME request that then passes through the
+	// normal chokepoint, never around it. Empty skips scripting entirely.
+	PreRequestScript string `yaml:"preRequestScript,omitempty" json:"preRequestScript,omitempty"`
+	OrderKey         string `yaml:"orderKey" json:"orderKey"`
 }
 
 type Environment struct {

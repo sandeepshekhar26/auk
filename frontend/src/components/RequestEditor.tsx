@@ -7,15 +7,17 @@ import BodyEditor from './BodyEditor'
 import AuthConfigForm from './AuthConfigForm'
 import AssertionEditor from './AssertionEditor'
 import PerfPanel from './PerfPanel'
+import ScriptEditor from './ScriptEditor'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
-type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'assert' | 'perf'
+type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'script' | 'assert' | 'perf'
 const TABS: { id: EditorTab; label: string }[] = [
   { id: 'params', label: 'Params' },
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
+  { id: 'script', label: 'Script' },
   { id: 'assert', label: 'Assert' },
   { id: 'perf', label: 'Perf' },
 ]
@@ -132,6 +134,9 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
                   <Show when={t.id === 'auth' && req().authRef && req().authRef!.kind !== 'none'}>
                     <span class="ml-1 text-accent-fg">●</span>
                   </Show>
+                  <Show when={t.id === 'script' && (req().preRequestScript?.trim().length ?? 0) > 0}>
+                    <span class="ml-1 text-accent-fg">●</span>
+                  </Show>
                   <Show when={t.id === 'assert' && (req().assertions?.length ?? 0) > 0}>
                     <span class="ml-1 text-ink-faint">{req().assertions!.length}</span>
                   </Show>
@@ -177,6 +182,18 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
             <Show when={tab() === 'auth'}>
               <div class="overflow-y-auto">
                 <AuthConfigForm requestIndex={activeIndex()} />
+              </div>
+            </Show>
+            <Show when={tab() === 'script'}>
+              <div class="flex h-full flex-col overflow-hidden">
+                <p class="border-b border-edge px-2 py-1.5 text-[11px] text-ink-faint">
+                  Runs after templating and auth, right before Send. Read <code class="text-ink-dim">ctx.request</code>{' '}
+                  (method/url/headers/body); call <code class="text-ink-dim">ctx.setHeader(name, value)</code> to
+                  add or override a header.
+                </p>
+                <div class="flex-1 overflow-hidden">
+                  <ScriptEditor requestIndex={activeIndex()} />
+                </div>
               </div>
             </Show>
             <Show when={tab() === 'assert'}>

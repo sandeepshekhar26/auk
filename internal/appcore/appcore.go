@@ -19,6 +19,7 @@ import (
 	httpprotocol "apitool/internal/protocols/http"
 	sseprotocol "apitool/internal/protocols/sse"
 	wsprotocol "apitool/internal/protocols/ws"
+	"apitool/internal/scripting"
 	"apitool/internal/storage"
 	"apitool/internal/templating"
 )
@@ -47,6 +48,7 @@ func NewEngine(dir string) (*core.Engine, *storage.FileStore, error) {
 	engine := core.NewEngine(store, nil, auth.New(), nil)
 	engine.Templater = templating.New(engine)
 	engine.Asserter = asserter{}
+	engine.Scripter = scripting.New()
 	engine.RegisterProtocol(httpprotocol.New())
 	engine.RegisterProtocol(wsprotocol.New())
 	engine.RegisterProtocol(sseprotocol.New())
