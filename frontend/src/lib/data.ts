@@ -6,7 +6,7 @@
 import { appState, setAppState, openTab } from './store'
 import { models, wails } from './wails'
 import type { model as wailsModel } from '../../wailsjs/go/models'
-import type { Environment, Folder, RequestDef } from '../types'
+import type { Environment, Folder, McpConnection, RequestDef } from '../types'
 
 let saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -49,6 +49,9 @@ function normalizeFolder(f: wailsModel.Folder): Folder {
 function normalizeEnvironment(e: wailsModel.Environment): Environment {
   return { ...e, color: e.color ?? null, variables: e.variables ?? [], secrets: e.secrets ?? [] }
 }
+function normalizeMcpConnection(c: wailsModel.McpConnection): McpConnection {
+  return { ...c, transport: c.transport as McpConnection['transport'], args: c.args ?? [] }
+}
 
 /** Loads the workspace list and, if none is active yet, selects the first one. */
 export async function loadWorkspaces(): Promise<void> {
@@ -59,16 +62,33 @@ export async function loadWorkspaces(): Promise<void> {
   }
 }
 
-/** Loads everything scoped to one workspace: requests, folders, environments. */
+/** Loads everything scoped to one workspace: requests, folders, environments, MCP connections. */
 export async function loadWorkspaceData(workspaceId: string): Promise<void> {
-  const [requests, folders, environments] = await Promise.all([
+  const [requests, folders, environments, mcpConnections] = await Promise.all([
     wails.ListRequests(workspaceId),
     wails.ListFolders(workspaceId),
     wails.ListEnvironments(workspaceId),
+    wails.ListMcpConnections(workspaceId),
   ])
   setAppState('requests', (requests ?? []).map(normalizeRequest))
   setAppState('folders', (folders ?? []).map(normalizeFolder))
   setAppState('environments', (environments ?? []).map(normalizeEnvironment))
+  setAppState('mcpConnections', (mcpConnections ?? []).map(normalizeMcpConnection))
+}
+
+/** Creates a new MCP connection config (not yet connected) and reloads the list. */
+export async function createMcpConnection(conn: Omit<McpConnection, 'id' | 'workspaceId'>): Promise<void> {
+  if (!appState.activeWorkspaceId) return
+  const draft: McpConnection = { ...conn, id: crypto.randomUUID(), workspaceId: appState.activeWorkspaceId }
+  await wails.CreateMcpConnection(models.McpConnection.createFrom(draft))
+  await loadWorkspaceData(appState.activeWorkspaceId)
+}
+
+/** Removes an MCP connection config (the backend disconnects any live session first). */
+export async function deleteMcpConnection(id: string): Promise<void> {
+  if (!appState.activeWorkspaceId) return
+  await wails.DeleteMcpConnection(id)
+  await loadWorkspaceData(appState.activeWorkspaceId)
 }
 
 /** History is global (not workspace-scoped) — see internal/storage/history.go. */

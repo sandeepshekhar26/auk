@@ -82,6 +82,74 @@ func TestFileStore_RequestOrderKeyAssignedForSiblings(t *testing.T) {
 	}
 }
 
+func TestFileStore_McpConnectionRoundTrip(t *testing.T) {
+	fs, dir := newTestFileStore(t)
+
+	conn := model.McpConnection{
+		ID: "conn1", WorkspaceID: "ws1", Name: "My dev server",
+		Transport: model.McpTransportStdio, Command: "node", Args: []string{"server.js"},
+	}
+	if err := fs.PutMcpConnection(conn); err != nil {
+		t.Fatalf("PutMcpConnection: %v", err)
+	}
+
+	path := mcpConnectionFile(dir, "ws1", "conn1")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected mcp connection file at %s: %v", path, err)
+	}
+
+	got, err := fs.GetMcpConnection("conn1")
+	if err != nil {
+		t.Fatalf("GetMcpConnection: %v", err)
+	}
+	if got.Name != "My dev server" || got.Command != "node" {
+		t.Errorf("GetMcpConnection returned unexpected data: %+v", got)
+	}
+
+	list := fs.ListMcpConnections("ws1")
+	if len(list) != 1 || list[0].ID != "conn1" {
+		t.Errorf("ListMcpConnections = %+v, want exactly conn1", list)
+	}
+
+	// Reload from disk into a fresh store and confirm it round-trips.
+	fs2, err := NewFileStore(dir, WithSecretStore(newFakeSecretStore()), WithHistoryPath(filepath.Join(dir, "history.jsonl")))
+	if err != nil {
+		t.Fatalf("reload NewFileStore: %v", err)
+	}
+	reloaded, err := fs2.GetMcpConnection("conn1")
+	if err != nil {
+		t.Fatalf("GetMcpConnection after reload: %v", err)
+	}
+	if reloaded.Name != "My dev server" {
+		t.Errorf("reloaded name = %q, want %q", reloaded.Name, "My dev server")
+	}
+}
+
+func TestFileStore_RemoveMcpConnection(t *testing.T) {
+	fs, dir := newTestFileStore(t)
+
+	conn := model.McpConnection{ID: "conn1", WorkspaceID: "ws1", Name: "Temp", Transport: model.McpTransportHTTP, URL: "http://localhost:1234/mcp"}
+	if err := fs.PutMcpConnection(conn); err != nil {
+		t.Fatalf("PutMcpConnection: %v", err)
+	}
+	path := mcpConnectionFile(dir, "ws1", "conn1")
+
+	if err := fs.RemoveMcpConnection("conn1"); err != nil {
+		t.Fatalf("RemoveMcpConnection: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected the connection file to be deleted, stat err = %v", err)
+	}
+	if list := fs.ListMcpConnections("ws1"); len(list) != 0 {
+		t.Errorf("expected no connections after removal, got %+v", list)
+	}
+
+	// Removing an id that never existed is a no-op, not an error.
+	if err := fs.RemoveMcpConnection("does-not-exist"); err != nil {
+		t.Errorf("RemoveMcpConnection on unknown id should be a no-op, got: %v", err)
+	}
+}
+
 func TestFileStore_EnvironmentSecretsExcludedFromYAML(t *testing.T) {
 	fs, dir := newTestFileStore(t)
 

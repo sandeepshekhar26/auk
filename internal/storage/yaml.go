@@ -46,6 +46,14 @@ func folderFile(rootDir string, workspaceID model.ID, id model.ID) string {
 	return filepath.Join(foldersDir(rootDir, workspaceID), id+".yaml")
 }
 
+func mcpConnectionsDir(rootDir string, workspaceID model.ID) string {
+	return filepath.Join(workspaceRoot(rootDir, workspaceID), "mcp-connections")
+}
+
+func mcpConnectionFile(rootDir string, workspaceID model.ID, id model.ID) string {
+	return filepath.Join(mcpConnectionsDir(rootDir, workspaceID), id+".yaml")
+}
+
 // environmentYAML is the on-disk shape of an environment file. Secret
 // VALUES never appear here — only the names in Secrets (inherited from
 // model.Environment's own yaml tags), matching docs/02-architecture.md §7.5

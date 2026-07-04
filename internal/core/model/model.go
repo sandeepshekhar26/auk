@@ -153,6 +153,30 @@ type Environment struct {
 	Secrets []string `yaml:"secrets,omitempty" json:"secrets"`
 }
 
+type McpTransportKind string
+
+const (
+	McpTransportStdio McpTransportKind = "stdio"
+	McpTransportHTTP  McpTransportKind = "http"
+)
+
+// McpConnection is a developer-configured target MCP server AUK can connect
+// to as a CLIENT to debug it — separate from internal/mcpserver, which is
+// AUK acting as an MCP *server* exposing ITS OWN tools to Claude. Stdio
+// launches Command with Args as a subprocess and speaks JSON-RPC over its
+// stdin/stdout (exactly like `claude mcp add` would); HTTP dials URL as a
+// Streamable-HTTP MCP endpoint, optionally with a bearer token.
+type McpConnection struct {
+	ID          ID               `yaml:"id" json:"id"`
+	WorkspaceID ID               `yaml:"workspaceId" json:"workspaceId"`
+	Name        string           `yaml:"name" json:"name"`
+	Transport   McpTransportKind `yaml:"transport" json:"transport"`
+	Command     string           `yaml:"command,omitempty" json:"command,omitempty"`
+	Args        []string         `yaml:"args,omitempty" json:"args,omitempty"`
+	URL         string           `yaml:"url,omitempty" json:"url,omitempty"`
+	BearerToken string           `yaml:"bearerToken,omitempty" json:"bearerToken,omitempty"`
+}
+
 type ResponseData struct {
 	RequestID  ID         `json:"requestId"`
 	Status     int        `json:"status"`

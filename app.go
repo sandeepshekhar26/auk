@@ -17,6 +17,7 @@ import (
 	"apitool/internal/core/model"
 	"apitool/internal/gitops"
 	"apitool/internal/importer"
+	"apitool/internal/mcpclient"
 	"apitool/internal/mcpserver"
 	"apitool/internal/perf"
 	"apitool/internal/storage"
@@ -35,10 +36,29 @@ type App struct {
 	perfMu      sync.Mutex
 	perfCancels map[string]context.CancelFunc
 
-	// Embedded MCP server state (Settings → MCP Server).
+	// Embedded MCP server state (Settings → MCP Server) — AUK acting as an
+	// MCP SERVER, exposing its own tools to Claude.
 	mcpMu    sync.Mutex
 	mcpHTTP  *mcpserver.HTTPServer
 	mcpError string
+
+	// mcpClients holds live debugging sessions to OTHER MCP servers — AUK
+	// acting as an MCP CLIENT, the mirror-image feature — keyed by
+	// McpConnection id. Distinct from mcpHTTP above; the two never overlap.
+	// mcpClientMu protects the map itself (short critical sections only);
+	// mcpConnLocks gives each connection id its OWN mutex, held for the
+	// full duration of a connect/list/call/disconnect on that id, so two
+	// rapid operations on the SAME connection (e.g. a double-click, or a
+	// self-healing reconnect racing a manual Disconnect) can't both decide
+	// the map needs updating and stomp each other — without that, two
+	// concurrent McpConnect(id) calls could each see "not connected", each
+	// spawn/dial their own session, and each write a.mcpClients[id],
+	// silently leaking whichever session lost the write race (unreachable
+	// from anywhere, including the shutdown cleanup loop, since nothing
+	// references it anymore). Different ids never contend with each other.
+	mcpClientMu  sync.Mutex
+	mcpClients   map[string]*mcpclient.Client
+	mcpConnLocks map[string]*sync.Mutex
 
 	// approvals tracks MCP-initiated mutating requests waiting on the in-app
 	// Allow/Deny modal, keyed by approval id.
@@ -59,10 +79,12 @@ func NewApp() *App {
 	}
 
 	app := &App{
-		store:       store,
-		engine:      engine,
-		perfCancels: map[string]context.CancelFunc{},
-		approvals:   map[string]chan bool{},
+		store:        store,
+		engine:       engine,
+		perfCancels:  map[string]context.CancelFunc{},
+		mcpClients:   map[string]*mcpclient.Client{},
+		mcpConnLocks: map[string]*sync.Mutex{},
+		approvals:    map[string]chan bool{},
 	}
 	// Replace the default allow-all policy: GUI/CLI/chain origins stay
 	// unrestricted, but MCP-initiated mutating requests must be approved in
@@ -82,6 +104,37 @@ func (a *App) startup(ctx context.Context) {
 			a.mcpMu.Unlock()
 		}
 	}
+}
+
+// shutdown closes every live MCP client session (internal/mcpclient's SDK
+// has no finalizer — a stdio-backed session may have spawned a subprocess
+// that survives the app exiting unless explicitly closed here) and stops
+// the embedded MCP server if it's running. Closes are fanned out
+// concurrently, not one at a time: each Close follows the MCP shutdown
+// sequence (close stdin, wait, SIGTERM, wait, SIGKILL) and can take up to
+// ~10s for an unresponsive subprocess, so N live connections closed
+// sequentially could hold the whole app-quit hostage for ~10s × N —
+// closing them in parallel bounds it to ~10s total regardless of N.
+func (a *App) shutdown(context.Context) {
+	a.mcpClientMu.Lock()
+	clients := make([]*mcpclient.Client, 0, len(a.mcpClients))
+	for id, client := range a.mcpClients {
+		clients = append(clients, client)
+		delete(a.mcpClients, id)
+	}
+	a.mcpClientMu.Unlock()
+
+	var wg sync.WaitGroup
+	for _, client := range clients {
+		wg.Add(1)
+		go func(c *mcpclient.Client) {
+			defer wg.Done()
+			_ = c.Close()
+		}(client)
+	}
+	wg.Wait()
+
+	a.stopMCP()
 }
 
 // seedDemoData gives a first-run user something real to look at and send.
@@ -319,6 +372,177 @@ func (a *App) StopPerfTest(requestID string) {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+// ---- MCP client (debug someone else's MCP server) ----
+//
+// This is the mirror image of the embedded MCP SERVER further down: here
+// AUK is the CLIENT, connecting to an MCP server a developer is building
+// themselves, to see what tools it publishes and test-invoke them — the
+// same job the official MCP Inspector does, integrated into AUK's existing
+// request/response UI language instead of a separate tool.
+
+// mcpCallTimeout bounds ListTools/CallTool against a live session so a
+// hung external MCP server can't freeze the UI indefinitely. Connect has
+// its own shorter internal timeout (internal/mcpclient.connectTimeout).
+const mcpCallTimeout = 30 * time.Second
+
+// mcpConnLock returns id's dedicated mutex (creating it on first use),
+// serializing every Connect/Disconnect/ListTools/CallTool for THAT
+// connection while leaving every other connection id fully independent —
+// see the field doc comment on mcpConnLocks for why this matters.
+func (a *App) mcpConnLock(id string) *sync.Mutex {
+	a.mcpClientMu.Lock()
+	defer a.mcpClientMu.Unlock()
+	lock, ok := a.mcpConnLocks[id]
+	if !ok {
+		lock = &sync.Mutex{}
+		a.mcpConnLocks[id] = lock
+	}
+	return lock
+}
+
+// ListMcpConnections is bound to the frontend.
+func (a *App) ListMcpConnections(workspaceID string) []model.McpConnection {
+	return a.store.ListMcpConnections(workspaceID)
+}
+
+// CreateMcpConnection persists a new MCP connection config (not yet
+// connected — McpConnect does that).
+func (a *App) CreateMcpConnection(conn model.McpConnection) error {
+	if conn.ID == "" {
+		conn.ID = uuid.NewString()
+	}
+	return a.store.PutMcpConnection(conn)
+}
+
+// UpdateMcpConnection overwrites an existing connection config. A live
+// session (if any) keeps running under its OLD config until the user
+// disconnects and reconnects — editing the command/url takes effect on the
+// next connect, not retroactively on an already-open session.
+func (a *App) UpdateMcpConnection(conn model.McpConnection) error {
+	return a.store.PutMcpConnection(conn)
+}
+
+// DeleteMcpConnection disconnects any live session first (so a stdio
+// subprocess doesn't outlive its own config) and then removes it.
+func (a *App) DeleteMcpConnection(id string) error {
+	a.McpDisconnect(id)
+	return a.store.RemoveMcpConnection(id)
+}
+
+// McpConnect connects (or reuses an already-live session for id) and
+// returns the published tool list. Self-healing: if a cached session turns
+// out to be dead (e.g. the target server was restarted while AUK still had
+// it open — completely routine while actively developing an MCP server,
+// which is exactly who this feature is for), the stale entry is evicted
+// and a fresh connection is established transparently, rather than
+// surfacing a confusing transport-level error for something a Disconnect+
+// Connect click would have fixed anyway.
+func (a *App) McpConnect(id string) ([]mcpclient.ToolInfo, error) {
+	lock := a.mcpConnLock(id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	a.mcpClientMu.Lock()
+	client, connected := a.mcpClients[id]
+	a.mcpClientMu.Unlock()
+
+	if connected {
+		ctx, cancel := context.WithTimeout(a.ctx, mcpCallTimeout)
+		tools, err := client.ListTools(ctx)
+		cancel()
+		if err == nil {
+			return tools, nil
+		}
+		a.mcpClientMu.Lock()
+		delete(a.mcpClients, id)
+		a.mcpClientMu.Unlock()
+		_ = client.Close()
+	}
+
+	conn, err := a.store.GetMcpConnection(id)
+	if err != nil {
+		return nil, err
+	}
+	client, err = mcpclient.Connect(a.ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	a.mcpClientMu.Lock()
+	a.mcpClients[id] = client
+	a.mcpClientMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(a.ctx, mcpCallTimeout)
+	defer cancel()
+	return client.ListTools(ctx)
+}
+
+// McpDisconnect closes a live session for id, if any. A no-op if id was
+// never connected — the frontend's Disconnect button doesn't need to track
+// that separately.
+func (a *App) McpDisconnect(id string) {
+	lock := a.mcpConnLock(id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	a.mcpClientMu.Lock()
+	client, ok := a.mcpClients[id]
+	if ok {
+		delete(a.mcpClients, id)
+	}
+	a.mcpClientMu.Unlock()
+	if ok {
+		_ = client.Close()
+	}
+}
+
+// McpIsConnected reports whether a live session exists for id.
+func (a *App) McpIsConnected(id string) bool {
+	a.mcpClientMu.Lock()
+	defer a.mcpClientMu.Unlock()
+	_, ok := a.mcpClients[id]
+	return ok
+}
+
+// McpListTools re-lists tools on an already-connected session (a "Refresh"
+// button) without reconnecting.
+func (a *App) McpListTools(id string) ([]mcpclient.ToolInfo, error) {
+	lock := a.mcpConnLock(id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	a.mcpClientMu.Lock()
+	client, ok := a.mcpClients[id]
+	a.mcpClientMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("not connected")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, mcpCallTimeout)
+	defer cancel()
+	return client.ListTools(ctx)
+}
+
+// McpCallTool invokes a tool on an already-connected session with a JSON
+// object of arguments (argsJSON may be "" or "{}" for no arguments). Also
+// serialized per-connection-id (see mcpConnLocks) — not because concurrent
+// tool calls on one session are unsafe by themselves, but so a call can
+// never race a concurrent Disconnect/self-healing-reconnect for the SAME
+// id and end up invoked against a client that's mid-Close.
+func (a *App) McpCallTool(id string, toolName string, argsJSON string) (mcpclient.CallResult, error) {
+	lock := a.mcpConnLock(id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	a.mcpClientMu.Lock()
+	client, ok := a.mcpClients[id]
+	a.mcpClientMu.Unlock()
+	if !ok {
+		return mcpclient.CallResult{}, fmt.Errorf("not connected")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, mcpCallTimeout)
+	defer cancel()
+	return client.CallTool(ctx, toolName, argsJSON)
 }
 
 // ---- Git collaboration ----

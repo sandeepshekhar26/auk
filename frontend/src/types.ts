@@ -226,6 +226,46 @@ export interface GitCommit {
   date: string
 }
 
+export type McpTransportKind = 'stdio' | 'http'
+
+// A developer-configured target MCP server AUK connects to as a CLIENT to
+// debug it — distinct from AUK's own embedded MCP SERVER (Settings → MCP
+// Server), which exposes AUK's tools to Claude in the other direction.
+export interface McpConnection {
+  id: ID
+  workspaceId: ID
+  name: string
+  transport: McpTransportKind
+  command?: string
+  args?: string[]
+  url?: string
+  bearerToken?: string
+}
+
+export interface McpToolInfo {
+  name: string
+  title?: string
+  description: string
+  inputSchema: unknown
+  outputSchema?: unknown
+  readOnlyHint: boolean
+  destructiveHint: boolean
+  idempotentHint: boolean
+}
+
+export interface McpContentBlock {
+  type: 'text' | 'image' | 'audio' | 'unknown'
+  text?: string
+  mimeType?: string
+  dataBase64?: string
+}
+
+export interface McpCallResult {
+  content: McpContentBlock[]
+  structuredContent?: unknown
+  isError: boolean
+}
+
 export interface CommandItem {
   id: string
   title: string

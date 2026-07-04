@@ -5,6 +5,7 @@ import type { Folder, RequestDef } from '../types'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HistoryPanel from './HistoryPanel'
 import GitPanel from './GitPanel'
+import McpPanel from './McpPanel'
 
 interface FolderNode {
   folder: Folder | null // null = synthetic root
@@ -184,6 +185,16 @@ export default function Sidebar() {
             Git
           </button>
           <button
+            class="flex-1 rounded px-2 py-1 text-xs font-medium"
+            classList={{
+              'bg-raised text-ink': explorerTab() === 'mcp',
+              'text-ink-muted hover:text-ink-dim': explorerTab() !== 'mcp',
+            }}
+            onClick={() => setExplorerTab('mcp')}
+          >
+            MCP
+          </button>
+          <button
             class="ml-1 rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-raised hover:text-ink-dim"
             title="Close (Esc)"
             onClick={() => setExplorerOpen(false)}
@@ -235,6 +246,12 @@ export default function Sidebar() {
         <Show when={explorerTab() === 'git'}>
           <div class="flex-1 overflow-hidden">
             <GitPanel />
+          </div>
+        </Show>
+
+        <Show when={explorerTab() === 'mcp'}>
+          <div class="flex-1 overflow-hidden">
+            <McpPanel />
           </div>
         </Show>
       </div>

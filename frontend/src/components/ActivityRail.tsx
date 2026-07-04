@@ -69,6 +69,14 @@ export default function ActivityRail() {
         <span class="text-base leading-none">⎇</span>
       </button>
 
+      <button
+        class={railButtonClasses(explorerOpen() && explorerTab() === 'mcp')}
+        title="MCP tool debugger"
+        onClick={() => (explorerOpen() && explorerTab() === 'mcp' ? setExplorerOpen(false) : openExplorer('mcp'))}
+      >
+        <span class="text-base leading-none">◈</span>
+      </button>
+
       <button class={railButtonClasses(false)} title="New request (⌘N)" onClick={() => void createRequest()}>
         <span class="text-base leading-none">+</span>
       </button>

@@ -12,7 +12,8 @@ import ImportCurlModal from './components/ImportCurlModal'
 import StreamConsole from './components/StreamConsole'
 import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
-import { appState, setExplorerOpen, setMcpApprovals } from './lib/store'
+import McpToolView from './components/McpToolView'
+import { appState, mcpToolView, setExplorerOpen, setMcpApprovals } from './lib/store'
 import { events, wails } from './lib/wails'
 import { createRequest, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
@@ -127,15 +128,28 @@ export default function App() {
           </div>
         </div>
 
-        <RequestTabBar />
-        <div class="flex flex-1 overflow-hidden">
-          <div class="flex-1 overflow-hidden">
-            <RequestEditor onSend={handleSend} />
+        {/* An MCP tool selected in McpPanel takes over this SAME main area
+            (full width — a schema form + response deserves more room than
+            the drawer) rather than living alongside the request tab bar;
+            picking a request (openTab) switches back automatically. */}
+        <Show
+          when={!mcpToolView()}
+          fallback={
+            <div class="flex flex-1 overflow-hidden">
+              <McpToolView />
+            </div>
+          }
+        >
+          <RequestTabBar />
+          <div class="flex flex-1 overflow-hidden">
+            <div class="flex-1 overflow-hidden">
+              <RequestEditor onSend={handleSend} />
+            </div>
+            <div class="w-[45%] overflow-hidden">
+              <ResponseViewer response={response()} loading={sending()} />
+            </div>
           </div>
-          <div class="w-[45%] overflow-hidden">
-            <ResponseViewer response={response()} loading={sending()} />
-          </div>
-        </div>
+        </Show>
 
         {/* The explorer drawer is positioned fixed (see Sidebar.tsx) so it
             overlays rather than pushing this layout — it can mount anywhere. */}

@@ -27,6 +27,10 @@ func main() {
 		// color before the webview paints on launch.
 		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 10, A: 1},
 		OnStartup:        app.startup,
+		// Closes any live MCP client sessions (see app.shutdown) — without
+		// this, a stdio-backed debugging connection's subprocess can outlive
+		// the app itself.
+		OnShutdown: app.shutdown,
 		Bind: []interface{}{
 			app,
 		},

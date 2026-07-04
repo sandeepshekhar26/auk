@@ -1,6 +1,6 @@
 import { createStore } from 'solid-js/store'
 import { createSignal } from 'solid-js'
-import type { Environment, Folder, HistoryEntry, RequestDef, StreamEvent, Workspace } from '../types'
+import type { Environment, Folder, HistoryEntry, McpConnection, RequestDef, StreamEvent, Workspace } from '../types'
 
 export interface AppState {
   workspaces: Workspace[]
@@ -9,6 +9,7 @@ export interface AppState {
   requests: RequestDef[]
   environments: Environment[]
   activeEnvironmentId: string | null
+  mcpConnections: McpConnection[]
   openTabIds: string[]
   activeTabId: string | null
   history: HistoryEntry[]
@@ -22,11 +23,23 @@ export const [appState, setAppState] = createStore<AppState>({
   requests: [],
   environments: [],
   activeEnvironmentId: null,
+  mcpConnections: [],
   openTabIds: [],
   activeTabId: null,
   history: [],
   streamEvents: [],
 })
+
+// Selecting an MCP tool to test takes over the SAME main-area real estate
+// RequestEditor+ResponseViewer normally occupy (full width, not cramped
+// into the drawer) — mutually exclusive with the request tab bar's
+// activeTabId, not layered on top of it. openTab (below) clears this so
+// picking a request switches back automatically.
+export interface McpToolViewTarget {
+  connectionId: string
+  toolName: string
+}
+export const [mcpToolView, setMcpToolView] = createSignal<McpToolViewTarget | null>(null)
 
 export const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
 export const [sidebarFilter, setSidebarFilter] = createSignal('')
@@ -35,7 +48,7 @@ export const [sidebarFilter, setSidebarFilter] = createSignal('')
 // replaces a permanently-docked sidebar — collapsed by default. ⌘B, the rail,
 // and the command palette all toggle the same signal; explorerTab picks
 // which section shows when it opens.
-export type ExplorerTab = 'requests' | 'history' | 'git'
+export type ExplorerTab = 'requests' | 'history' | 'git' | 'mcp'
 export const [explorerOpen, setExplorerOpen] = createSignal(false)
 export const [explorerTab, setExplorerTab] = createSignal<ExplorerTab>('requests')
 
@@ -66,6 +79,7 @@ export const [mcpApprovals, setMcpApprovals] = createSignal<MCPApproval[]>([])
 export function openTab(requestId: string) {
   setAppState('openTabIds', (ids) => (ids.includes(requestId) ? ids : [...ids, requestId]))
   setAppState('activeTabId', requestId)
+  setMcpToolView(null)
 }
 
 export function closeTab(requestId: string) {

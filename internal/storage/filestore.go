@@ -29,10 +29,11 @@ type FileStore struct {
 	historyPath string
 	secrets     SecretStore
 
-	workspaces   map[model.ID]model.Workspace
-	folders      map[model.ID]model.Folder
-	requests     map[model.ID]model.RequestDef
-	environments map[model.ID]model.Environment
+	workspaces     map[model.ID]model.Workspace
+	folders        map[model.ID]model.Folder
+	requests       map[model.ID]model.RequestDef
+	environments   map[model.ID]model.Environment
+	mcpConnections map[model.ID]model.McpConnection
 
 	// lastResponses is an in-memory-only cache for response()-chaining
 	// lookups; the durable record of a response is the JSONL history file's
@@ -62,13 +63,14 @@ func WithHistoryPath(path string) FileStoreOption {
 // exist yet (first run).
 func NewFileStore(rootDir string, opts ...FileStoreOption) (*FileStore, error) {
 	fs := &FileStore{
-		rootDir:       rootDir,
-		secrets:       NewKeyringSecretStore(),
-		workspaces:    make(map[model.ID]model.Workspace),
-		folders:       make(map[model.ID]model.Folder),
-		requests:      make(map[model.ID]model.RequestDef),
-		environments:  make(map[model.ID]model.Environment),
-		lastResponses: make(map[model.ID]model.ResponseData),
+		rootDir:        rootDir,
+		secrets:        NewKeyringSecretStore(),
+		workspaces:     make(map[model.ID]model.Workspace),
+		folders:        make(map[model.ID]model.Folder),
+		requests:       make(map[model.ID]model.RequestDef),
+		environments:   make(map[model.ID]model.Environment),
+		mcpConnections: make(map[model.ID]model.McpConnection),
+		lastResponses:  make(map[model.ID]model.ResponseData),
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		fs.historyPath = filepath.Join(home, ".auk", "history.jsonl")
@@ -155,6 +157,18 @@ func (s *FileStore) loadWorkspace(workspaceID model.ID) error {
 		s.environments[y.ID] = y.toModel()
 	}
 
+	mcpPaths, err := listYAMLFiles(mcpConnectionsDir(s.rootDir, workspaceID))
+	if err != nil {
+		return err
+	}
+	for _, p := range mcpPaths {
+		var c model.McpConnection
+		if err := readYAMLFile(p, &c); err != nil {
+			return err
+		}
+		s.mcpConnections[c.ID] = c
+	}
+
 	return nil
 }
 
@@ -234,6 +248,65 @@ func (s *FileStore) nextRequestOrderKeyLocked(workspaceID model.ID, folderID *mo
 		}
 	}
 	return OrderKeyBetween(last, "")
+}
+
+// PutMcpConnection creates or overwrites a developer-configured MCP server
+// connection (see model.McpConnection doc comment — this is AUK acting as
+// an MCP client to debug someone's server, not internal/mcpserver's
+// GUI-as-MCP-server role). No OrderKey/nesting — a flat per-workspace list,
+// same as Environment.
+func (s *FileStore) PutMcpConnection(c model.McpConnection) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := writeYAMLFile(mcpConnectionFile(s.rootDir, c.WorkspaceID, c.ID), c); err != nil {
+		return err
+	}
+	s.mcpConnections[c.ID] = c
+	return nil
+}
+
+// ListMcpConnections returns every configured connection in a workspace
+// (or every connection across all workspaces if workspaceID is empty,
+// matching ListRequests/ListFolders' convention).
+func (s *FileStore) ListMcpConnections(workspaceID model.ID) []model.McpConnection {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.McpConnection, 0)
+	for _, c := range s.mcpConnections {
+		if workspaceID == "" || c.WorkspaceID == workspaceID {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// GetMcpConnection looks up one connection by id.
+func (s *FileStore) GetMcpConnection(id model.ID) (model.McpConnection, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.mcpConnections[id]
+	if !ok {
+		return model.McpConnection{}, fmt.Errorf("mcp connection %q not found", id)
+	}
+	return c, nil
+}
+
+// RemoveMcpConnection deletes a connection's YAML file and drops it from
+// memory. Removing an id that doesn't exist is a no-op, not an error — the
+// caller (a "Remove" button the user might double-click) shouldn't have to
+// distinguish "already gone" from "gone now".
+func (s *FileStore) RemoveMcpConnection(id model.ID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.mcpConnections[id]
+	if !ok {
+		return nil
+	}
+	if err := os.Remove(mcpConnectionFile(s.rootDir, c.WorkspaceID, c.ID)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove mcp connection file: %w", err)
+	}
+	delete(s.mcpConnections, id)
+	return nil
 }
 
 // PutEnvironment creates or overwrites an environment. Any variable name
