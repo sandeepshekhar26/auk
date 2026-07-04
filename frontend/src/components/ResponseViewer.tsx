@@ -7,7 +7,7 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { unifiedMergeView } from '@codemirror/merge'
 import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
-import type { Assertion, AssertionResult, ResponseData, TimingBreakdown } from '../types'
+import type { Assertion, AssertionResult, RedirectHop, ResponseData, TimingBreakdown } from '../types'
 import { appState } from '../lib/store'
 import { wails } from '../lib/wails'
 
@@ -62,6 +62,40 @@ function timingPhases(t: TimingBreakdown) {
   ]
   const total = Math.max(1, t.totalMs)
   return raw.map((p) => ({ ...p, pct: (p.ms / total) * 100 }))
+}
+
+interface RedirectWarning {
+  // The warning applies to the transition FROM redirectChain[afterIndex] TO
+  // redirectChain[afterIndex + 1] — rendered attached to that hop's row.
+  afterIndex: number
+  kind: 'downgrade' | 'cross-origin'
+  message: string
+}
+
+// Flags two things a redirect chain can do that a plain status-code list
+// won't surface on its own: silently drop from HTTPS to plaintext HTTP
+// (the classic SSL-stripping shape — a real credential/token exposure risk,
+// not just informational), or hop to a different origin entirely. At most
+// one warning per transition — a scheme downgrade is by definition also an
+// origin change, and restating both would just be noise for the same fact.
+function computeRedirectWarnings(chain: RedirectHop[]): RedirectWarning[] {
+  const warnings: RedirectWarning[] = []
+  for (let i = 0; i < chain.length - 1; i++) {
+    let a: URL
+    let b: URL
+    try {
+      a = new URL(chain[i].url)
+      b = new URL(chain[i + 1].url)
+    } catch {
+      continue
+    }
+    if (a.protocol === 'https:' && b.protocol === 'http:') {
+      warnings.push({ afterIndex: i, kind: 'downgrade', message: `Redirects from HTTPS to plaintext HTTP: ${b.origin}` })
+    } else if (a.origin !== b.origin) {
+      warnings.push({ afterIndex: i, kind: 'cross-origin', message: `Redirects to a different origin: ${b.origin}` })
+    }
+  }
+  return warnings
 }
 
 function buildCurl(req: { method: string; url: string; headers: { key: string; value: string; enabled: boolean }[] } | undefined): string {
@@ -166,6 +200,9 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   })
 
   const activeRequest = createMemo(() => appState.requests.find((r) => r.id === appState.activeTabId))
+
+  const redirectWarnings = createMemo(() => computeRedirectWarnings(props.response?.redirectChain ?? []))
+  const hasDowngradeWarning = createMemo(() => redirectWarnings().some((w) => w.kind === 'downgrade'))
 
   createEffect(() => {
     const host = editorHost()
@@ -328,6 +365,17 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                     <Show when={(res().redirectChain?.length ?? 0) > 1}>
                       <span class="ml-1 text-ink-faint">{res().redirectChain!.length} hops</span>
                     </Show>
+                    <Show when={redirectWarnings().length > 0}>
+                      <span
+                        class="ml-1"
+                        classList={{ 'text-danger': hasDowngradeWarning(), 'text-warn': !hasDowngradeWarning() }}
+                        title={redirectWarnings()
+                          .map((w) => w.message)
+                          .join('; ')}
+                      >
+                        ⚠
+                      </span>
+                    </Show>
                   </button>
                 </Show>
 
@@ -484,21 +532,37 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                           <div class="mt-1 flex flex-col gap-1">
                             <For each={res().redirectChain}>
                               {(hop, i) => (
-                                <div class="flex items-center gap-2 font-mono text-[11px]">
-                                  <span class="text-ink-faint">{i() + 1}.</span>
-                                  <span class="text-ink-muted">{hop.method}</span>
-                                  <span class="flex-1 truncate text-ink-dim">{hop.url}</span>
-                                  <span
-                                    classList={{
-                                      'text-accent-fg': hop.status < 300,
-                                      'text-warn': hop.status >= 300 && hop.status < 400,
-                                      'text-danger': hop.status >= 400,
-                                    }}
-                                  >
-                                    {hop.status}
-                                  </span>
-                                  <span class="text-ink-faint">{hop.timingMs}ms</span>
-                                </div>
+                                <>
+                                  <div class="flex items-center gap-2 font-mono text-[11px]">
+                                    <span class="text-ink-faint">{i() + 1}.</span>
+                                    <span class="text-ink-muted">{hop.method}</span>
+                                    <span class="flex-1 truncate text-ink-dim">{hop.url}</span>
+                                    <span
+                                      classList={{
+                                        'text-accent-fg': hop.status < 300,
+                                        'text-warn': hop.status >= 300 && hop.status < 400,
+                                        'text-danger': hop.status >= 400,
+                                      }}
+                                    >
+                                      {hop.status}
+                                    </span>
+                                    <span class="text-ink-faint">{hop.timingMs}ms</span>
+                                  </div>
+                                  <For each={redirectWarnings().filter((w) => w.afterIndex === i())}>
+                                    {(w) => (
+                                      <div
+                                        class="ml-4 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+                                        classList={{
+                                          'border-danger-edge bg-danger-bg/40 text-danger': w.kind === 'downgrade',
+                                          'border-warn-edge bg-warn/10 text-warn': w.kind === 'cross-origin',
+                                        }}
+                                      >
+                                        <span>⚠</span>
+                                        <span>{w.message}</span>
+                                      </div>
+                                    )}
+                                  </For>
+                                </>
                               )}
                             </For>
                           </div>

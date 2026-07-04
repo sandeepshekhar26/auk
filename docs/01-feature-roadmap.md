@@ -99,7 +99,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 ### Import / export
 - [x] Import: OpenAPI 3.0/3.1, Swagger 2.0, Postman Collection v2/v2.1, cURL — Insomnia v4+ not built
 - [x] Copy as cURL / Paste cURL (round-trip individual requests)
-- [x] Export workspace as single JSON file (2026-07-05)
+- [ ] Export workspace as single JSON file (not built yet — this line was also marked done prematurely in an earlier pass, same issue as the code-snippet line above; corrected 2026-07-05)
 - [ ] OpenAPI sync (keep workspace synced to a spec)
 
 ### Git sync & file storage
