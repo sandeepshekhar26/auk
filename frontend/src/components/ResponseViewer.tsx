@@ -7,7 +7,7 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { unifiedMergeView } from '@codemirror/merge'
 import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
-import type { Assertion, AssertionResult, RedirectHop, ResponseData, TimingBreakdown } from '../types'
+import type { Assertion, AssertionResult, AuthConfig, RedirectHop, RequestBody, RequestDef, ResponseData, TimingBreakdown } from '../types'
 import { appState } from '../lib/store'
 import { wails } from '../lib/wails'
 
@@ -98,25 +98,232 @@ function computeRedirectWarnings(chain: RedirectHop[]): RedirectWarning[] {
   return warnings
 }
 
-function buildCurl(req: { method: string; url: string; headers: { key: string; value: string; enabled: boolean }[] } | undefined): string {
-  if (!req) return ''
-  const parts = ['curl', '-X', req.method]
-  for (const h of req.headers) {
-    if (!h.enabled || !h.key) continue
-    parts.push('-H', shellQuote(`${h.key}: ${h.value}`))
-  }
-  parts.push(shellQuote(req.url))
-  return parts.join(' ')
-}
-
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
+// JSON's escaping (\", \\, \n, \r, \t, \uXXXX) is a subset of Python/JS/Go's
+// own double-quoted string literal escaping, so JSON.stringify's output is
+// valid source syntax in all three languages for the realistic content here
+// (header/URL/body text) — one implementation, not three near-duplicates.
+function dqStr(s: string): string {
+  return JSON.stringify(s)
+}
+
+// btoa() throws on non-Latin1 input; Go's base64.StdEncoding (what the real
+// Basic-auth header uses) encodes raw UTF-8 bytes, so credentials with
+// non-ASCII characters need the same byte-level encoding here, not a naive
+// btoa(str) call.
+function base64FromUtf8(s: string): string {
+  const bytes = new TextEncoder().encode(s)
+  let binary = ''
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b)
+  })
+  return btoa(binary)
+}
+
+function authKindLabel(kind: AuthConfig['kind']): string {
+  switch (kind) {
+    case 'jwt':
+      return 'JWT'
+    case 'oauth2':
+      return 'OAuth2'
+    case 'awsSigV4':
+      return 'AWS SigV4'
+    default:
+      return kind
+  }
+}
+
+// Mirrors internal/protocols/http/http.go's buildURL merge (params layered
+// onto any query string already in the raw URL), using encodeURIComponent
+// rather than Go's url.QueryEscape (which encodes space as '+' and sorts
+// keys) — a cross-language snippet should look the way a Python/JS/Go
+// reader expects their OWN language's query encoding to look, not replicate
+// Go's exact byte-for-byte wire encoding.
+function mergeQueryParams(url: string, params: { key: string; value: string; enabled: boolean }[]): string {
+  const enabled = params.filter((p) => p.enabled && p.key)
+  if (enabled.length === 0) return url
+  const qs = enabled.map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&')
+  return url + (url.includes('?') ? '&' : '?') + qs
+}
+
+// internal/protocols/http's Execute sends RequestBody.Text completely
+// verbatim as the wire body, regardless of Kind — there's no per-kind
+// server-side encoding or auto-Content-Type in that path (BodyEditor's
+// 'form' kind now keeps Text synced to an encoded string itself; 'binary'
+// has no editor yet, so there's nothing meaningful to reproduce for it).
+// The one real exception is the SEPARATE graphql PROTOCOL (not Body.Kind
+// under http) — internal/protocols/graphql/graphql.go always builds a
+// {query,variables} JSON envelope and always sets Content-Type: application/json,
+// regardless of what body.kind happens to say.
+function resolveBody(protocol: RequestDef['protocol'], body: RequestBody | null): { text: string | null; isGraphqlEnvelope: boolean } {
+  if (protocol === 'graphql') {
+    let variables: unknown
+    const raw = body?.graphqlVariables?.trim()
+    if (raw) {
+      try {
+        variables = JSON.parse(raw)
+      } catch {
+        variables = undefined
+      }
+    }
+    const envelope: Record<string, unknown> = { query: body?.text ?? '' }
+    if (variables !== undefined) envelope.variables = variables
+    return { text: JSON.stringify(envelope), isGraphqlEnvelope: true }
+  }
+  if (!body || body.kind === 'none' || body.kind === 'binary' || !body.text) return { text: null, isGraphqlEnvelope: false }
+  return { text: body.text, isGraphqlEnvelope: false }
+}
+
+interface SnippetHeader {
+  key: string
+  value: string
+}
+
+interface ResolvedSnippetRequest {
+  method: string
+  url: string
+  headers: SnippetHeader[]
+  bodyText: string | null
+  authNote: string | null
+}
+
+// Shared resolution step for every "Copy as" format — computes exactly what
+// AUK would actually put on the wire for this request (headers including
+// the ones simple auth kinds derive, params merged into the URL, body per
+// resolveBody above) ONCE, so cURL/Python/JS/Go can't drift from each other
+// or from reality. Values are used exactly as stored — any ${...} template
+// expressions are left as literal text, same as the existing cURL export
+// already did, since resolving them would need a live templating call
+// scoped to whichever environment is active.
+function resolveSnippetRequest(req: RequestDef): ResolvedSnippetRequest {
+  const headers: SnippetHeader[] = []
+  const params = [...req.params]
+  let authNote: string | null = null
+
+  const { text: bodyText, isGraphqlEnvelope } = resolveBody(req.protocol, req.body)
+  if (isGraphqlEnvelope) headers.push({ key: 'Content-Type', value: 'application/json' })
+
+  for (const h of req.headers) if (h.enabled && h.key) headers.push({ key: h.key, value: h.value })
+
+  const auth = req.authRef
+  if (auth) {
+    switch (auth.kind) {
+      case 'basic':
+        if (auth.basic) headers.push({ key: 'Authorization', value: `Basic ${base64FromUtf8(`${auth.basic.username}:${auth.basic.password}`)}` })
+        break
+      case 'bearer':
+        if (auth.bearer?.token) headers.push({ key: 'Authorization', value: `Bearer ${auth.bearer.token}` })
+        break
+      case 'apikey':
+        if (auth.apikey?.key) {
+          if (auth.apikey.in === 'header') headers.push({ key: auth.apikey.key, value: auth.apikey.value })
+          else params.push({ key: auth.apikey.key, value: auth.apikey.value, enabled: true })
+        }
+        break
+      case 'jwt':
+      case 'oauth2':
+      case 'awsSigV4':
+        authNote = `${authKindLabel(auth.kind)} authentication is computed by AUK at send time and is not reproduced in this snippet.`
+        break
+    }
+  }
+
+  return { method: req.method, url: mergeQueryParams(req.url, params), headers, bodyText, authNote }
+}
+
+function buildCurl(req: RequestDef): string {
+  const r = resolveSnippetRequest(req)
+  const parts = ['curl', '-X', r.method]
+  for (const h of r.headers) parts.push('-H', shellQuote(`${h.key}: ${h.value}`))
+  if (r.bodyText !== null) parts.push('-d', shellQuote(r.bodyText))
+  parts.push(shellQuote(r.url))
+  const cmd = parts.join(' ')
+  return r.authNote ? `# ${r.authNote}\n${cmd}` : cmd
+}
+
+function buildPython(req: RequestDef): string {
+  const r = resolveSnippetRequest(req)
+  const lines: string[] = []
+  if (r.authNote) lines.push(`# ${r.authNote}`, '')
+  lines.push('import requests', '', `url = ${dqStr(r.url)}`)
+  const callArgs = ['method', 'url']
+  if (r.headers.length > 0) {
+    lines.push('headers = {')
+    for (const h of r.headers) lines.push(`    ${dqStr(h.key)}: ${dqStr(h.value)},`)
+    lines.push('}')
+    callArgs.push('headers=headers')
+  }
+  if (r.bodyText !== null) {
+    lines.push(`data = ${dqStr(r.bodyText)}`)
+    callArgs.push('data=data')
+  }
+  lines.push('', `response = requests.request(${dqStr(r.method)}, url${callArgs.length > 2 ? ', ' + callArgs.slice(2).join(', ') : ''})`)
+  lines.push('print(response.status_code)', 'print(response.text)')
+  return lines.join('\n')
+}
+
+function buildFetch(req: RequestDef): string {
+  const r = resolveSnippetRequest(req)
+  const lines: string[] = []
+  if (r.authNote) lines.push(`// ${r.authNote}`, '')
+  const opts: string[] = [`  method: ${dqStr(r.method)},`]
+  if (r.headers.length > 0) {
+    opts.push('  headers: {')
+    for (const h of r.headers) opts.push(`    ${dqStr(h.key)}: ${dqStr(h.value)},`)
+    opts.push('  },')
+  }
+  if (r.bodyText !== null) opts.push(`  body: ${dqStr(r.bodyText)},`)
+  lines.push(`fetch(${dqStr(r.url)}, {`, ...opts, '})', '  .then((response) => response.text())', '  .then((text) => console.log(text))')
+  return lines.join('\n')
+}
+
+function buildGo(req: RequestDef): string {
+  const r = resolveSnippetRequest(req)
+  const lines: string[] = ['package main', '', 'import (', '\t"fmt"', '\t"io"', '\t"net/http"']
+  if (r.bodyText !== null) lines.push('\t"strings"')
+  lines.push(')', '')
+  if (r.authNote) lines.push(`// ${r.authNote}`)
+  lines.push('func main() {')
+  const bodyExpr = r.bodyText !== null ? `strings.NewReader(${dqStr(r.bodyText)})` : 'nil'
+  lines.push(`\treq, err := http.NewRequest(${dqStr(r.method)}, ${dqStr(r.url)}, ${bodyExpr})`, '\tif err != nil {', '\t\tpanic(err)', '\t}')
+  for (const h of r.headers) lines.push(`\treq.Header.Set(${dqStr(h.key)}, ${dqStr(h.value)})`)
+  lines.push(
+    '',
+    '\tresp, err := http.DefaultClient.Do(req)',
+    '\tif err != nil {',
+    '\t\tpanic(err)',
+    '\t}',
+    '\tdefer resp.Body.Close()',
+    '',
+    '\tbody, _ := io.ReadAll(resp.Body)',
+    '\tfmt.Println(resp.StatusCode)',
+    '\tfmt.Println(string(body))',
+    '}',
+  )
+  return lines.join('\n')
+}
+
+interface SnippetFormat {
+  id: string
+  label: string
+  build: (req: RequestDef) => string
+}
+
+const SNIPPET_FORMATS: SnippetFormat[] = [
+  { id: 'curl', label: 'cURL', build: buildCurl },
+  { id: 'python', label: 'Python (requests)', build: buildPython },
+  { id: 'js', label: 'JavaScript (fetch)', build: buildFetch },
+  { id: 'go', label: 'Go (net/http)', build: buildGo },
+]
+
 export default function ResponseViewer(props: { response: ResponseData | null; loading: boolean }) {
   const [tab, setTab] = createSignal<Tab>('body')
   const [bodyMode, setBodyMode] = createSignal<BodyMode>('pretty')
-  const [copied, setCopied] = createSignal(false)
+  const [copyMenuOpen, setCopyMenuOpen] = createSignal(false)
+  const [copiedFormat, setCopiedFormat] = createSignal<string | null>(null)
   const [diffMode, setDiffMode] = createSignal(false)
   const [hasPrior, setHasPrior] = createSignal(false)
   const [filterPath, setFilterPath] = createSignal('')
@@ -255,13 +462,25 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
     view?.destroy()
   })
 
-  async function copyAsCurl() {
-    const cmd = buildCurl(activeRequest())
-    if (!cmd) return
+  // WS/SSE/gRPC don't fit the single request/response shape these formats
+  // generate for — gating here (rather than just disabling on !activeRequest())
+  // avoids offering a "Copy as Python" that can't mean anything for a
+  // streaming connection.
+  const canCopySnippet = createMemo(() => {
+    const p = activeRequest()?.protocol
+    return p === 'http' || p === 'graphql'
+  })
+
+  async function copySnippet(format: SnippetFormat) {
+    const req = activeRequest()
+    if (!req) return
+    const code = format.build(req)
+    if (!code) return
     try {
-      await navigator.clipboard.writeText(cmd)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      await navigator.clipboard.writeText(code)
+      setCopiedFormat(format.label)
+      setCopyMenuOpen(false)
+      setTimeout(() => setCopiedFormat(null), 1500)
     } catch {
       // clipboard access denied or unavailable; nothing else we can do here
     }
@@ -286,14 +505,34 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 </span>
                 <span class="text-ink-muted">{res().timingMs}ms</span>
                 <span class="text-ink-muted">{res().bodySize}B</span>
-                <button
-                  class="ml-auto rounded bg-field px-2 py-1 text-[11px] text-ink-dim hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!activeRequest()}
-                  onClick={copyAsCurl}
-                  title="Copy as cURL"
-                >
-                  {copied() ? 'Copied' : 'Copy as cURL'}
-                </button>
+                <div class="relative ml-auto">
+                  <button
+                    class="rounded bg-field px-2 py-1 text-[11px] text-ink-dim hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!canCopySnippet()}
+                    onClick={() => setCopyMenuOpen((v) => !v)}
+                    title={canCopySnippet() ? 'Copy this request as a code snippet' : 'Code snippets are only available for HTTP/GraphQL requests'}
+                  >
+                    {copiedFormat() ? `Copied ${copiedFormat()}` : 'Copy as ▾'}
+                  </button>
+                  <Show when={copyMenuOpen()}>
+                    <div class="fixed inset-0 z-10" onClick={() => setCopyMenuOpen(false)} />
+                    <div
+                      class="absolute right-0 top-full z-20 mt-1 w-48 rounded border border-edge bg-elevated py-1 shadow-lg"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <For each={SNIPPET_FORMATS}>
+                        {(format) => (
+                          <button
+                            class="block w-full px-3 py-1.5 text-left text-[11px] text-ink-dim hover:bg-raised hover:text-ink"
+                            onClick={() => copySnippet(format)}
+                          >
+                            {format.label}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
               </div>
 
               <Show when={(res().assertionResults?.length ?? 0) > 0}>

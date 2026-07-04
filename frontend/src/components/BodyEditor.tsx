@@ -85,6 +85,21 @@ function JsonCodeMirror(props: { requestIndex: number; bodyIndex: number; text: 
   return <div ref={container} class="h-full min-h-[200px]" />
 }
 
+// internal/protocols/http's Execute sends RequestBody.Text completely
+// verbatim as the wire body for every non-none Kind — it never reads
+// FormFields itself (confirmed: that field doesn't appear anywhere in
+// http.go). So the 'form' kind's key/value table was previously a dead
+// end: filling it in updated `formFields` but never touched `text`, meaning
+// a "form" body silently sent nothing at all. Keeping `text` synced to the
+// url-encoded serialization of `formFields` on every edit is what makes the
+// existing http.go code path (unchanged) actually send the form data.
+function encodeFormFields(fields: KeyValue[]): string {
+  return fields
+    .filter((f) => f.enabled && f.key)
+    .map((f) => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value)}`)
+    .join('&')
+}
+
 export default function BodyEditor(props: { requestIndex: number }) {
   const req = () => appState.requests[props.requestIndex]
   const body = (): RequestBody => req()?.body ?? { kind: 'none', text: '', formFields: [] }
@@ -94,11 +109,26 @@ export default function BodyEditor(props: { requestIndex: number }) {
       kind,
       text: prev?.text ?? '',
       formFields: prev?.formFields ?? [],
+      graphqlVariables: prev?.graphqlVariables,
     }))
+    // Standard API-client UX (matches Yaak/Postman/Insomnia): picking "form"
+    // as the body type suggests the matching Content-Type, but only if the
+    // user hasn't already set one — never override an explicit choice.
+    if (kind === 'form' && !(req()?.headers ?? []).some((h) => h.key.toLowerCase() === 'content-type')) {
+      setAppState('requests', props.requestIndex, 'headers', (hs: KeyValue[] | null | undefined) => [
+        ...(hs ?? []),
+        { key: 'Content-Type', value: 'application/x-www-form-urlencoded', enabled: true },
+      ])
+    }
+  }
+
+  function syncFormText() {
+    setAppState('requests', props.requestIndex, 'body', 'text', encodeFormFields(appState.requests[props.requestIndex]?.body?.formFields ?? []))
   }
 
   function setFormField(index: number, field: keyof KeyValue, value: string | boolean) {
     setAppState('requests', props.requestIndex, 'body', 'formFields', index, field as any, value as any)
+    syncFormText()
   }
 
   // See the matching comment in RequestEditor's addRow: Go's omitempty
@@ -109,12 +139,14 @@ export default function BodyEditor(props: { requestIndex: number }) {
       ...(fields ?? []),
       { key: '', value: '', enabled: true },
     ])
+    syncFormText()
   }
 
   function removeFormField(index: number) {
     setAppState('requests', props.requestIndex, 'body', 'formFields', (fields: KeyValue[] | null | undefined) =>
       (fields ?? []).filter((_, i) => i !== index),
     )
+    syncFormText()
   }
 
   return (
