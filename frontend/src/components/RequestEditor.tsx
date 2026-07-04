@@ -5,6 +5,7 @@ import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
 import type { KeyValue, ProtocolKind } from '../types'
 import KeyValueTable from './KeyValueTable'
 import BodyEditor from './BodyEditor'
+import GraphQLEditor from './GraphQLEditor'
 import AuthConfigForm from './AuthConfigForm'
 import AssertionEditor from './AssertionEditor'
 import PerfPanel from './PerfPanel'
@@ -285,7 +286,9 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
             </Show>
             <Show when={tab() === 'body'}>
               <div class="flex-1 overflow-hidden">
-                <BodyEditor requestIndex={activeIndex()} />
+                <Show when={req().protocol === 'graphql'} fallback={<BodyEditor requestIndex={activeIndex()} />}>
+                  <GraphQLEditor requestIndex={activeIndex()} />
+                </Show>
               </div>
             </Show>
             <Show when={tab() === 'auth'}>
