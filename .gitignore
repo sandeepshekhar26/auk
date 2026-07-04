@@ -12,3 +12,9 @@ build/sidecars/k6.exe
 /mcp
 /apitool-mcp
 build/dist
+
+# FileStore's data dir (internal/storage) when a CLI/test run points
+# --workspace-dir at the repo root instead of ~/.auk — dev/test fixture
+# data, not source. (A few such files got committed by accident early on.)
+/workspace/
+/workspaces/
