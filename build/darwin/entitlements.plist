@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- WKWebView's JS engine needs JIT + writable/executable memory. Without
+	     these two the webview renders a blank window under hardened runtime. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<!-- AUK shells out to the k6 sidecar (and other child processes); allow
+	     loading/execing binaries not signed by the same Team ID. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<!-- Outbound HTTP/WS/gRPC is the whole point of the app. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- The embedded MCP server binds a loopback listener. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>
