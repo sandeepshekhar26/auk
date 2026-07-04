@@ -11,3 +11,4 @@ build/sidecars/k6
 build/sidecars/k6.exe
 /mcp
 /apitool-mcp
+build/dist
