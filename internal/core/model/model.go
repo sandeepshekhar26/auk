@@ -18,6 +18,12 @@ type Folder struct {
 	ParentID    *ID    `yaml:"parentId,omitempty" json:"parentId"`
 	Name        string `yaml:"name" json:"name"`
 	OrderKey    string `yaml:"orderKey" json:"orderKey"`
+	// Variables are folder-scoped, inherited by every request in this folder
+	// (and its subfolders) as a layer between the workspace Environment and
+	// the request itself — see core.Engine.resolveAndAuthorize, which walks
+	// a request's folder chain root-first so the CLOSEST folder wins on a
+	// name collision, same as the environment being the outermost/weakest layer.
+	Variables []KeyValue `yaml:"variables,omitempty" json:"variables"`
 }
 
 type ProtocolKind string

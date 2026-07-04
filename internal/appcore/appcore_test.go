@@ -97,3 +97,114 @@ func TestCookieCapture_EndToEnd(t *testing.T) {
 		t.Fatalf("got echoed X-Echo-Token %q, want %q", echoed, want)
 	}
 }
+
+// TestFolderVariables_InheritAndOverride exercises the real store + engine
+// (not a fake) with a 3-level chain — workspace Environment -> parent folder
+// -> child folder -> request — proving both inheritance (a var only the
+// Environment defines still resolves for a request two folders deep) and
+// override precedence (the closer a variable's definition, the more it
+// wins), using the exact appcore.NewEngine construction the GUI/CLI/MCP all
+// share.
+func TestFolderVariables_InheritAndOverride(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	engine, store, err := NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	wsID := uuid.NewString()
+	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "test"}); err != nil {
+		t.Fatalf("PutWorkspace: %v", err)
+	}
+	envID := uuid.NewString()
+	if err := store.PutEnvironment(model.Environment{
+		ID: envID, WorkspaceID: wsID,
+		Variables: []model.KeyValue{
+			{Key: "envOnly", Value: "from-env", Enabled: true},
+			{Key: "tier", Value: "from-env", Enabled: true},
+		},
+	}, nil); err != nil {
+		t.Fatalf("PutEnvironment: %v", err)
+	}
+
+	parentID := uuid.NewString()
+	if err := store.PutFolder(model.Folder{
+		ID: parentID, WorkspaceID: wsID, Name: "parent",
+		Variables: []model.KeyValue{
+			{Key: "tier", Value: "from-parent-folder", Enabled: true},
+			{Key: "parentOnly", Value: "from-parent", Enabled: true},
+		},
+	}); err != nil {
+		t.Fatalf("PutFolder(parent): %v", err)
+	}
+
+	childID := uuid.NewString()
+	if err := store.PutFolder(model.Folder{
+		ID: childID, WorkspaceID: wsID, ParentID: &parentID, Name: "child",
+		Variables: []model.KeyValue{
+			{Key: "tier", Value: "from-child-folder", Enabled: true},
+		},
+	}); err != nil {
+		t.Fatalf("PutFolder(child): %v", err)
+	}
+
+	req := model.RequestDef{
+		ID: uuid.NewString(), WorkspaceID: wsID, FolderID: &childID, Name: "deep",
+		Protocol: model.ProtocolHTTP, Method: "GET",
+		URL: srv.URL + "/${envOnly}/${parentOnly}/${tier}",
+	}
+	if err := store.PutRequest(req); err != nil {
+		t.Fatalf("PutRequest: %v", err)
+	}
+
+	if _, err := engine.RunRequest(t.Context(), "sess-1", req.ID, envID, "cli", core.NoopSink{}); err != nil {
+		t.Fatalf("RunRequest: %v", err)
+	}
+
+	want := "/from-env/from-parent/from-child-folder"
+	if gotPath != want {
+		t.Fatalf("got path %q, want %q (envOnly inherited from environment, parentOnly inherited from the parent folder, tier overridden all the way down to the child folder)", gotPath, want)
+	}
+}
+
+// TestFolderVariables_NoFolderUnaffected guards the common case: a request
+// with no FolderID must resolve exactly as before this feature existed —
+// folderVariables should short-circuit without even touching the store's
+// folder list.
+func TestFolderVariables_NoFolderUnaffected(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	engine, store, err := NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	wsID := uuid.NewString()
+	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "test"}); err != nil {
+		t.Fatalf("PutWorkspace: %v", err)
+	}
+	req := model.RequestDef{
+		ID: uuid.NewString(), WorkspaceID: wsID, FolderID: nil, Name: "no-folder",
+		Protocol: model.ProtocolHTTP, Method: "GET", URL: srv.URL + "/plain",
+	}
+	if err := store.PutRequest(req); err != nil {
+		t.Fatalf("PutRequest: %v", err)
+	}
+
+	if _, err := engine.RunRequest(t.Context(), "sess-1", req.ID, "", "cli", core.NoopSink{}); err != nil {
+		t.Fatalf("RunRequest: %v", err)
+	}
+	if gotPath != "/plain" {
+		t.Fatalf("got path %q, want /plain", gotPath)
+	}
+}

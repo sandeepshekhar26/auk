@@ -9,6 +9,7 @@ import type { model as wailsModel } from '../../wailsjs/go/models'
 import type { Environment, Folder, McpConnection, RequestDef } from '../types'
 
 let saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let folderSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 // Wails' generated model classes represent Go's omitempty nullable-pointer
 // fields as `?: T` (possibly undefined); our hand-written types.ts (used
@@ -44,7 +45,7 @@ function normalizeRequest(r: wailsModel.RequestDef): RequestDef {
   }
 }
 function normalizeFolder(f: wailsModel.Folder): Folder {
-  return { ...f, parentId: f.parentId ?? null }
+  return { ...f, parentId: f.parentId ?? null, variables: f.variables ?? [] }
 }
 function normalizeEnvironment(e: wailsModel.Environment): Environment {
   return { ...e, color: e.color ?? null, variables: e.variables ?? [], secrets: e.secrets ?? [] }
@@ -127,6 +128,40 @@ export async function createRequest(): Promise<void> {
   await wails.CreateRequest(models.RequestDef.createFrom(draft))
   await loadWorkspaceData(appState.activeWorkspaceId)
   openTab(draft.id)
+}
+
+/**
+ * Creates a folder, optionally nested under parentId (undefined/null = a
+ * root-level folder in the active workspace). Mirrors createRequest's
+ * assign-id-client-side, persist, reload pattern.
+ */
+export async function createFolder(parentId?: string | null): Promise<void> {
+  if (!appState.activeWorkspaceId) return
+
+  const draft: Folder = {
+    id: crypto.randomUUID(),
+    workspaceId: appState.activeWorkspaceId,
+    parentId: parentId ?? null,
+    name: 'New Folder',
+    orderKey: '',
+    variables: [],
+  }
+
+  await wails.CreateFolder(models.Folder.createFrom(draft))
+  await loadWorkspaceData(appState.activeWorkspaceId)
+}
+
+/** Persists an edited folder (rename or variables change), debounced per-folder-id like saveRequestDebounced. */
+export function saveFolderDebounced(folder: Folder, delayMs = 400): void {
+  const existing = folderSaveTimers.get(folder.id)
+  if (existing) clearTimeout(existing)
+  folderSaveTimers.set(
+    folder.id,
+    setTimeout(() => {
+      folderSaveTimers.delete(folder.id)
+      void wails.UpdateFolder(models.Folder.createFrom(folder))
+    }, delayMs),
+  )
 }
 
 /**

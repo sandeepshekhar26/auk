@@ -77,6 +77,9 @@ type Store interface {
 	// response('Other Request').body.token, which addresses the target by
 	// display name (scoped to one workspace) rather than by id.
 	LookupRequestByName(workspaceID model.ID, name string) (model.RequestDef, error)
+	// ListFolders backs folder-scoped variable resolution (resolveAndAuthorize
+	// walks a request's folder chain via this).
+	ListFolders(workspaceID model.ID) []model.Folder
 }
 
 // DispatchContext carries everything the PolicyEngine needs to decide
@@ -233,6 +236,20 @@ func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, en
 		}
 	}
 
+	// Folder-scoped variables sit between the workspace Environment and the
+	// request: layer them into a shallow copy of env (appended after env's own
+	// variables) so the existing "last write to the map wins" merge in
+	// templating.Resolve gives the closest folder priority over the
+	// environment, without templating needing to know folders exist at all.
+	if folderVars := e.folderVariables(req.WorkspaceID, req.FolderID); len(folderVars) > 0 {
+		merged := model.Environment{}
+		if env != nil {
+			merged = *env
+		}
+		merged.Variables = append(append([]model.KeyValue{}, merged.Variables...), folderVars...)
+		env = &merged
+	}
+
 	resolved, err := e.Templater.Resolve(ctx, req, env, responseLookupFromStore{e.Store})
 	if err != nil {
 		return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("resolve templates: %w", err)
@@ -267,6 +284,43 @@ func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, en
 	}
 
 	return req, resolved, nil
+}
+
+// folderVariables walks a request's folder chain from its immediate parent up
+// to the workspace root, returning every ancestor's enabled variables in
+// ROOT-FIRST order — so appending them (in this order) after an environment's
+// own variables, into the same "last write wins" map templating.Resolve
+// already builds, gives a folder priority over the environment, and a nested
+// folder priority over its own parent folder. Returns nil for a request with
+// no folder (the common case), doing no work.
+func (e *Engine) folderVariables(workspaceID model.ID, folderID *model.ID) []model.KeyValue {
+	if folderID == nil {
+		return nil
+	}
+	byID := make(map[model.ID]model.Folder)
+	for _, f := range e.Store.ListFolders(workspaceID) {
+		byID[f.ID] = f
+	}
+
+	var chain []model.Folder
+	for id := folderID; id != nil; {
+		f, ok := byID[*id]
+		if !ok {
+			break // dangling parentId (e.g. a deleted folder) — stop, don't error the whole send
+		}
+		chain = append(chain, f)
+		id = f.ParentID
+	}
+
+	var vars []model.KeyValue
+	for i := len(chain) - 1; i >= 0; i-- {
+		for _, kv := range chain[i].Variables {
+			if kv.Enabled {
+				vars = append(vars, kv)
+			}
+		}
+	}
+	return vars
 }
 
 // ResolveForExecution exposes the resolve+auth+authorize front half for

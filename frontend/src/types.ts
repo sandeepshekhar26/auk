@@ -15,6 +15,10 @@ export interface Folder {
   parentId: ID | null
   name: string
   orderKey: string
+  // Inherited by every request in this folder (and its subfolders) as a
+  // layer between the workspace Environment and the request itself — the
+  // closest folder wins on a name collision. See core.Engine.folderVariables.
+  variables: KeyValue[]
 }
 
 export type ProtocolKind = 'http' | 'websocket' | 'grpc' | 'graphql' | 'sse'

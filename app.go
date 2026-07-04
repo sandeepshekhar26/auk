@@ -188,6 +188,22 @@ func (a *App) ListFolders(workspaceID string) []model.Folder {
 	return a.store.ListFolders(workspaceID)
 }
 
+// CreateFolder persists a new folder. Same ID-assigned-at-the-call-site
+// convention as CreateRequest.
+func (a *App) CreateFolder(f model.Folder) error {
+	if f.ID == "" {
+		f.ID = uuid.NewString()
+	}
+	return a.store.PutFolder(f)
+}
+
+// UpdateFolder overwrites an existing folder (rename, reparent, or edit its
+// folder-scoped Variables). PutFolder is create-or-replace, same as
+// UpdateRequest.
+func (a *App) UpdateFolder(f model.Folder) error {
+	return a.store.PutFolder(f)
+}
+
 // ListEnvironments is bound to the frontend.
 func (a *App) ListEnvironments(workspaceID string) []model.Environment {
 	return a.store.ListEnvironments(workspaceID)

@@ -38,6 +38,8 @@ func (s *fakeChainStore) GetEnvironment(model.ID) (*model.Environment, error) {
 	return nil, nil
 }
 
+func (s *fakeChainStore) ListFolders(model.ID) []model.Folder { return nil }
+
 func (s *fakeChainStore) SaveResponse(r model.ResponseData) error {
 	s.responses[r.RequestID] = r
 	return nil

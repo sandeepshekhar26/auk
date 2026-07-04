@@ -80,6 +80,19 @@ func (s *MemoryStore) ListRequests(workspaceID model.ID) []model.RequestDef {
 	return out
 }
 
+// ListFolders implements core.Store.
+func (s *MemoryStore) ListFolders(workspaceID model.ID) []model.Folder {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.Folder, 0)
+	for _, f := range s.folders {
+		if workspaceID == "" || f.WorkspaceID == workspaceID {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func (s *MemoryStore) ListEnvironments(workspaceID model.ID) []model.Environment {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
