@@ -88,7 +88,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [x] Dedicated response headers tab
 - [x] Timeline / debug tab (redirects, cookies, payload, headers, timing)
 - [x] Streaming responses (SSE / WebSocket live view; gRPC is unary-only, nothing to stream yet)
-- [x] Code-snippet generation from a request ("Copy as" cURL, Python `requests`, JS `fetch`, Go `net/http` added 2026-07-05)
+- [ ] Code-snippet generation from a request ("Copy as cURL" ships today; Python `requests`/JS `fetch`/Go `net/http` generators not built yet — this line was marked done prematurely in an earlier pass without the code existing; corrected 2026-07-05)
 
 ### History, cookies & debugging
 - [x] Per-request response history

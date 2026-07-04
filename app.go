@@ -17,6 +17,7 @@ import (
 	"apitool/internal/core/model"
 	"apitool/internal/gitops"
 	"apitool/internal/importer"
+	"apitool/internal/jsonpath"
 	"apitool/internal/mcpclient"
 	"apitool/internal/mcpserver"
 	"apitool/internal/perf"
@@ -224,6 +225,15 @@ func (a *App) ListHistory() []model.HistoryEntry {
 func (a *App) SendRequest(requestID string, environmentID string) (model.ResponseData, error) {
 	sessionID := uuid.NewString()
 	return a.engine.RunRequest(a.ctx, sessionID, requestID, environmentID, "gui", core.NoopSink{})
+}
+
+// JSONPathFilter evaluates a dot/bracket path ("data.items[0].name") against
+// a JSON response body for the response viewer's filter box, reusing the
+// exact same walker internal/templating's json.get() and the assertion
+// engine's body checks already rely on — one path evaluator, not a
+// frontend-side reimplementation that could quietly drift from it.
+func (a *App) JSONPathFilter(jsonBody string, path string) (string, error) {
+	return jsonpath.Get(jsonBody, path)
 }
 
 // CreateRequest persists a new request definition. The caller is expected to

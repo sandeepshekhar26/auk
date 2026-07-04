@@ -9,6 +9,7 @@ import { unifiedMergeView } from '@codemirror/merge'
 import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
 import type { Assertion, AssertionResult, ResponseData, TimingBreakdown } from '../types'
 import { appState } from '../lib/store'
+import { wails } from '../lib/wails'
 
 function assertionLabel(a: Assertion): string {
   let target: string = a.source
@@ -84,6 +85,9 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   const [copied, setCopied] = createSignal(false)
   const [diffMode, setDiffMode] = createSignal(false)
   const [hasPrior, setHasPrior] = createSignal(false)
+  const [filterPath, setFilterPath] = createSignal('')
+  const [filterState, setFilterState] = createSignal<{ result: string; error: string | null }>({ result: '', error: null })
+  const filterActive = createMemo(() => filterPath().trim().length > 0)
 
   const [editorHost, setEditorHost] = createSignal<HTMLDivElement>()
   let view: EditorView | undefined
@@ -101,6 +105,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
         } else {
           priorBody = ''
           setDiffMode(false)
+          setFilterPath('')
         }
         setHasPrior(priorBody.length > 0)
       },
@@ -109,7 +114,52 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
 
   const rawBody = createMemo(() => decodeBody(props.response?.bodyBase64 ?? ''))
   const jsonInfo = createMemo(() => tryPrettyJson(rawBody()))
+
+  // Debounced (150ms) so a fast typist filtering a large body doesn't fire
+  // one JSONPathFilter IPC call per keystroke; `cancelled` guards against a
+  // stale in-flight call overwriting a newer one if a response ever arrives
+  // out of order. jsonpath.Get is reused as-is on the Go side (see app.go's
+  // JSONPathFilter) rather than reimplemented here, so path semantics can't
+  // drift from what json.get()/assertions already rely on.
+  createEffect(() => {
+    const path = filterPath().trim()
+    const body = rawBody()
+    if (!path) {
+      setFilterState({ result: '', error: null })
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      wails
+        .JSONPathFilter(body, path)
+        .then((result) => {
+          if (!cancelled) setFilterState({ result, error: null })
+        })
+        .catch((err) => {
+          if (!cancelled) setFilterState({ result: '', error: err instanceof Error ? err.message : String(err) })
+        })
+    }, 150)
+    onCleanup(() => {
+      cancelled = true
+      clearTimeout(timer)
+    })
+  })
+
+  // A filtered value is always shown pretty-printed if it's itself an
+  // object/array (tryPrettyJson already implements exactly that check), and
+  // as bodyIsJson's ValueToString rendered it plainly for scalars — reusing
+  // tryPrettyJson here instead of duplicating its JSON.parse/stringify logic.
+  const filteredInfo = createMemo(() => tryPrettyJson(filterState().result))
+  const filteredDisplayText = createMemo(() => {
+    const { pretty, isJson } = filteredInfo()
+    if (isJson && pretty !== null) return pretty
+    return filterState().result
+  })
+
   const displayText = createMemo(() => {
+    if (filterActive()) {
+      return filterState().error ? '' : filteredDisplayText()
+    }
     const { pretty, isJson } = jsonInfo()
     if (bodyMode() === 'pretty' && isJson && pretty !== null) return pretty
     return rawBody()
@@ -120,8 +170,8 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   createEffect(() => {
     const host = editorHost()
     const text = displayText()
-    const isJsonView = jsonInfo().isJson
-    const showDiff = diffMode() && hasPrior()
+    const isJsonView = filterActive() ? filteredInfo().isJson : jsonInfo().isJson
+    const showDiff = diffMode() && hasPrior() && !filterActive()
     if (!host) return
 
     if (view) {
@@ -290,7 +340,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                     >
                       Search
                     </button>
-                    <Show when={hasPrior()}>
+                    <Show when={hasPrior() && !filterActive()}>
                       <button
                         class="rounded px-2 py-0.5 text-[11px]"
                         classList={{
@@ -303,7 +353,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                         Diff
                       </button>
                     </Show>
-                    <Show when={jsonInfo().isJson && !diffMode()}>
+                    <Show when={jsonInfo().isJson && !diffMode() && !filterActive()}>
                       <div class="flex items-center gap-1 rounded bg-field p-0.5">
                         <button
                           class="rounded px-2 py-0.5 text-[11px]"
@@ -331,10 +381,38 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 </Show>
               </div>
 
+              <Show when={tab() === 'body' && jsonInfo().isJson}>
+                <div class="flex items-center gap-2 border-b border-edge px-2 py-1">
+                  <span class="shrink-0 font-mono text-[10px] uppercase tracking-wide text-ink-faint">JSONPath</span>
+                  <input
+                    class="min-w-0 flex-1 rounded bg-field px-2 py-1 font-mono text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-edge-strong"
+                    placeholder="Filter, e.g. data.items[0].name"
+                    value={filterPath()}
+                    onInput={(e) => setFilterPath(e.currentTarget.value)}
+                  />
+                  <Show when={filterActive()}>
+                    <button
+                      class="shrink-0 rounded px-1.5 py-0.5 text-xs text-ink-faint hover:bg-raised hover:text-ink-dim"
+                      onClick={() => setFilterPath('')}
+                      title="Clear filter"
+                    >
+                      ×
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+
               <div class="flex-1 overflow-hidden" classList={{ hidden: tab() !== 'body' }}>
+                <Show when={filterActive() && filterState().error}>
+                  <div class="border-b border-edge bg-danger-bg/40 px-2 py-1 font-mono text-[11px] text-danger">
+                    {filterState().error}
+                  </div>
+                </Show>
                 <div ref={setEditorHost} class="h-full overflow-auto" classList={{ hidden: displayText().length === 0 }} />
-                <Show when={displayText().length === 0}>
-                  <div class="p-3 text-sm text-ink-faint">Empty response body.</div>
+                <Show when={displayText().length === 0 && !(filterActive() && filterState().error)}>
+                  <div class="p-3 text-sm text-ink-faint">
+                    {filterActive() ? 'No value at this path yet.' : 'Empty response body.'}
+                  </div>
                 </Show>
               </div>
 
