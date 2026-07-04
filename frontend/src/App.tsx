@@ -15,7 +15,7 @@ import MCPApprovalModal from './components/MCPApprovalModal'
 import McpToolView from './components/McpToolView'
 import { appState, mcpToolView, setExplorerOpen, setMcpApprovals } from './lib/store'
 import { events, wails } from './lib/wails'
-import { createRequest, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
+import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
 import type { MCPApproval } from './lib/store'
 import type { ResponseData } from './types'
@@ -65,6 +65,11 @@ export default function App() {
   async function handleSend(requestId: string) {
     setSending(true)
     try {
+      // Flush any pending debounced edit first: SendRequest resolves the
+      // request from the backend store, so without this a quick edit-then-send
+      // (e.g. set a gRPC method/URL then hit Send) would run against stale
+      // state — which for gRPC means dialing the wrong transport and hanging.
+      await flushRequestSave(requestId)
       const result = await wails.SendRequest(requestId, appState.activeEnvironmentId ?? '')
       // Wails widens Go's string-enum fields (assertion source/operator) to
       // `string`; the backend only ever emits valid enum values.

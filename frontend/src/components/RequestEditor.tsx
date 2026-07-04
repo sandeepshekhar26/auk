@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, For, on } from 'solid-js'
+import { Show, Switch, Match, createEffect, createMemo, createSignal, For, on } from 'solid-js'
 import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, activeStreams, pushStreamEvent } from '../lib/store'
 import { saveRequestDebounced } from '../lib/data'
 import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
@@ -6,6 +6,7 @@ import type { KeyValue, ProtocolKind } from '../types'
 import KeyValueTable from './KeyValueTable'
 import BodyEditor from './BodyEditor'
 import GraphQLEditor from './GraphQLEditor'
+import GrpcEditor from './GrpcEditor'
 import AuthConfigForm from './AuthConfigForm'
 import AssertionEditor from './AssertionEditor'
 import PerfPanel from './PerfPanel'
@@ -286,9 +287,14 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
             </Show>
             <Show when={tab() === 'body'}>
               <div class="flex-1 overflow-hidden">
-                <Show when={req().protocol === 'graphql'} fallback={<BodyEditor requestIndex={activeIndex()} />}>
-                  <GraphQLEditor requestIndex={activeIndex()} />
-                </Show>
+                <Switch fallback={<BodyEditor requestIndex={activeIndex()} />}>
+                  <Match when={req().protocol === 'graphql'}>
+                    <GraphQLEditor requestIndex={activeIndex()} />
+                  </Match>
+                  <Match when={req().protocol === 'grpc'}>
+                    <GrpcEditor requestIndex={activeIndex()} />
+                  </Match>
+                </Switch>
               </div>
             </Show>
             <Show when={tab() === 'auth'}>

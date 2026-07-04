@@ -83,6 +83,17 @@ func (c *Client) Kind() model.ProtocolKind { return model.ProtocolGRPC }
 func (c *Client) Execute(ctx context.Context, sess *core.Session, req model.RequestDef, resolved core.ResolvedRequest) (resp model.ResponseData, execErr error) {
 	start := time.Now()
 
+	// A unary gRPC call should never hang forever: reflection + invoke run
+	// against the caller's ctx, which for a GUI send has no deadline, so an
+	// unreachable server (wrong host/port, blocked network) would block the UI
+	// on "Sending…" indefinitely. Bound it if the caller didn't. grpc.NewClient
+	// is lazy, so this covers connect, reflection, and the RPC together.
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+
 	// Reflection/descriptor code paths in jhump/protoreflect can panic on
 	// malformed or legacy descriptors from real-world servers (docs/04-
 	// architecture-critique.md §E). Degrade to a clean error, never crash
