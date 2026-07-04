@@ -4,6 +4,7 @@ import { createRequest } from '../lib/data'
 import type { Folder, RequestDef } from '../types'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HistoryPanel from './HistoryPanel'
+import GitPanel from './GitPanel'
 
 interface FolderNode {
   folder: Folder | null // null = synthetic root
@@ -173,6 +174,16 @@ export default function Sidebar() {
             History
           </button>
           <button
+            class="flex-1 rounded px-2 py-1 text-xs font-medium"
+            classList={{
+              'bg-raised text-ink': explorerTab() === 'git',
+              'text-ink-muted hover:text-ink-dim': explorerTab() !== 'git',
+            }}
+            onClick={() => setExplorerTab('git')}
+          >
+            Git
+          </button>
+          <button
             class="ml-1 rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-raised hover:text-ink-dim"
             title="Close (Esc)"
             onClick={() => setExplorerOpen(false)}
@@ -218,6 +229,12 @@ export default function Sidebar() {
         <Show when={explorerTab() === 'history'}>
           <div class="flex-1 overflow-hidden">
             <HistoryPanel />
+          </div>
+        </Show>
+
+        <Show when={explorerTab() === 'git'}>
+          <div class="flex-1 overflow-hidden">
+            <GitPanel />
           </div>
         </Show>
       </div>

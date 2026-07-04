@@ -199,6 +199,28 @@ export interface StreamEvent {
   timestamp: string
 }
 
+export type GitFileChangeStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked'
+
+export interface GitFileChange {
+  path: string
+  status: GitFileChangeStatus
+}
+
+export interface GitStatus {
+  isRepo: boolean
+  branch: string
+  clean: boolean
+  hasRemote: boolean
+  files: GitFileChange[]
+}
+
+export interface GitCommit {
+  hash: string
+  message: string
+  author: string
+  date: string
+}
+
 export interface CommandItem {
   id: string
   title: string

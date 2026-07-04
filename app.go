@@ -15,6 +15,7 @@ import (
 	"apitool/internal/appcore"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
+	"apitool/internal/gitops"
 	"apitool/internal/importer"
 	"apitool/internal/mcpserver"
 	"apitool/internal/perf"
@@ -318,6 +319,33 @@ func (a *App) StopPerfTest(requestID string) {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+// ---- Git collaboration ----
+
+// GitStatus reports the workspace directory's git state — branch,
+// dirty/clean, per-file changes — auto-initializing a repo there on first
+// call (docs/03-tech-stack.md's "in-app git" decision: this is meant to be
+// zero-config, not something the user has to `git init` themselves first).
+func (a *App) GitStatus() (gitops.Status, error) {
+	return gitops.GetStatus(appcore.DefaultWorkspaceDir())
+}
+
+// GitLog returns the last `limit` commits for the workspace directory,
+// newest first.
+func (a *App) GitLog(limit int) ([]gitops.Commit, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	return gitops.GetLog(appcore.DefaultWorkspaceDir(), limit)
+}
+
+// GitCommitAndPush stages every change in the workspace directory, commits
+// with message, and pushes to origin if one is configured. Returns whether
+// a push actually happened (false + nil error means "committed locally,
+// no remote configured").
+func (a *App) GitCommitAndPush(message string) (bool, error) {
+	return gitops.CommitAndPush(appcore.DefaultWorkspaceDir(), message, "", "")
 }
 
 // ---- Embedded MCP server (Settings → MCP Server) ----
