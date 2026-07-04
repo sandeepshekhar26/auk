@@ -33,7 +33,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 ### Environments & variable resolution
 - [x] Named environments (dev/staging/prod)
 - [ ] Sub-environments with fallback to base workspace environment
-- [x] Environment color-coding (avoid prod mistakes) (2026-07-05)
+- [x] Environment color-coding (avoid prod mistakes) (2026-07-05) — model field existed already (unused); added a preset-swatch picker + a colored dot always visible next to the active environment in the top bar, not just inside the editor
 - [x] `{{ functionName(args) }}` reference syntax (own grammar, not literal `${}`) — **autocomplete-while-typing in text inputs still missing**
 - [x] Encrypted secrets via OS keychain (safe to commit whole workspace to git) — `internal/storage/secrets.go`, real Keychain/Credential-Manager/Secret-Service backing via `go-keyring`, values never touch the synced YAML
 

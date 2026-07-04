@@ -11,6 +11,19 @@ import type { Environment, KeyValue } from '../types'
 // OS keychain). Closing or saving clears this out of memory.
 type SecretValues = Record<string, string>
 
+// A small preset palette (not a raw color picker) so environments stay
+// visually consistent with the common "prod=red, staging=amber, dev=green"
+// convention this feature exists for — glanceable at the top of the app, not
+// a design tool. null keeps the existing untinted look.
+const COLOR_PRESETS: { value: string | null; label: string }[] = [
+  { value: null, label: 'None' },
+  { value: '#ef4444', label: 'Red (e.g. production)' },
+  { value: '#f59e0b', label: 'Amber (e.g. staging)' },
+  { value: '#22c55e', label: 'Green (e.g. development)' },
+  { value: '#3b82f6', label: 'Blue' },
+  { value: '#a855f7', label: 'Purple' },
+]
+
 export default function EnvironmentEditor() {
   const [selectedId, setSelectedId] = createSignal<string | null>(null)
   const [secretValues, setSecretValues] = createSignal<SecretValues>({})
@@ -64,6 +77,10 @@ export default function EnvironmentEditor() {
 
   function renameEnvironment(id: string, name: string) {
     setAppState('environments', (e) => e.id === id, 'name', name)
+  }
+
+  function setColor(id: string, color: string | null) {
+    setAppState('environments', (e) => e.id === id, 'color', color)
   }
 
   async function deleteEnvironment(id: string) {
@@ -229,7 +246,12 @@ export default function EnvironmentEditor() {
                       setSecretValues({})
                     }}
                   >
-                    <span class="truncate">{env.name}</span>
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      <Show when={env.color}>
+                        <span class="h-2 w-2 shrink-0 rounded-full" style={{ 'background-color': env.color ?? undefined }} />
+                      </Show>
+                      <span class="truncate">{env.name}</span>
+                    </span>
                     <span class="ml-2 text-xs text-ink-faint">{env.variables.length}</span>
                   </button>
                 )}
@@ -271,6 +293,23 @@ export default function EnvironmentEditor() {
                       onInput={(e) => renameEnvironment(env().id, e.currentTarget.value)}
                       placeholder="Environment name"
                     />
+                    <div class="flex items-center gap-1" title="Color (helps tell environments apart at a glance)">
+                      <For each={COLOR_PRESETS}>
+                        {(preset) => (
+                          <button
+                            class="h-5 w-5 shrink-0 rounded-full ring-offset-1 ring-offset-field"
+                            classList={{ 'ring-2 ring-ink-dim': env().color === preset.value }}
+                            style={
+                              preset.value
+                                ? { 'background-color': preset.value }
+                                : { 'background-color': 'transparent', border: '1px dashed rgb(var(--color-edge-strong))' }
+                            }
+                            title={preset.label}
+                            onClick={() => setColor(env().id, preset.value)}
+                          />
+                        )}
+                      </For>
+                    </div>
                     <button
                       class="rounded px-2 py-1 text-xs text-danger hover:bg-danger-bg/40"
                       onClick={() => deleteEnvironment(env().id)}
