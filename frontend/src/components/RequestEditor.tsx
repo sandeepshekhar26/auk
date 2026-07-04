@@ -1,7 +1,8 @@
 import { Show, createEffect, createMemo, createSignal, For, on } from 'solid-js'
-import { appState, setAppState, setCommandPaletteOpen } from '../lib/store'
+import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, activeStreams, pushStreamEvent } from '../lib/store'
 import { saveRequestDebounced } from '../lib/data'
-import type { KeyValue } from '../types'
+import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
+import type { KeyValue, ProtocolKind } from '../types'
 import KeyValueTable from './KeyValueTable'
 import BodyEditor from './BodyEditor'
 import AuthConfigForm from './AuthConfigForm'
@@ -10,6 +11,31 @@ import PerfPanel from './PerfPanel'
 import ScriptEditor from './ScriptEditor'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+
+const PROTOCOLS: { value: ProtocolKind; label: string }[] = [
+  { value: 'http', label: 'HTTP' },
+  { value: 'graphql', label: 'GraphQL' },
+  { value: 'websocket', label: 'WS' },
+  { value: 'sse', label: 'SSE' },
+  { value: 'grpc', label: 'gRPC' },
+]
+
+// HTTP and GraphQL are the only protocols that carry an HTTP verb; WS/SSE/gRPC
+// address their target purely by URL (+ method header for gRPC), so the method
+// dropdown is hidden for them.
+const usesHttpMethod = (p: ProtocolKind) => p === 'http' || p === 'graphql'
+
+// WebSocket and SSE stay open and stream frames, so their action is
+// Connect/Disconnect (via StartStream/StopStream) rather than a one-shot Send.
+const isStreamingProtocol = (p: ProtocolKind) => p === 'websocket' || p === 'sse'
+
+const URL_PLACEHOLDER: Record<ProtocolKind, string> = {
+  http: 'https://api.example.com/{{ path }}',
+  graphql: 'https://api.example.com/graphql',
+  websocket: 'wss://example.com/socket',
+  sse: 'https://example.com/events',
+  grpc: 'example.com:443',
+}
 
 type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'script' | 'assert' | 'perf'
 const TABS: { id: EditorTab; label: string }[] = [
@@ -24,9 +50,34 @@ const TABS: { id: EditorTab; label: string }[] = [
 
 export default function RequestEditor(props: { onSend: (requestId: string) => void }) {
   const [tab, setTab] = createSignal<EditorTab>('params')
+  const [composeText, setComposeText] = createSignal('')
 
   const activeIndex = createMemo(() => appState.requests.findIndex((r) => r.id === appState.activeTabId))
   const active = createMemo(() => appState.requests.find((r) => r.id === appState.activeTabId))
+
+  const streaming = (requestId: string) => !!activeStreams()[requestId]
+
+  function connect(requestId: string) {
+    setStreamConsoleOpen(true)
+    startStream(requestId, appState.activeEnvironmentId ?? '').catch((err) => {
+      // Surface a dial/handshake failure in the console rather than silently
+      // leaving the button on "Connect" with no explanation.
+      pushStreamEvent({
+        sessionId: 'error',
+        kind: 'ws',
+        direction: 'meta',
+        payload: 'connect failed: ' + (err instanceof Error ? err.message : String(err)),
+        timestamp: new Date().toISOString(),
+      })
+    })
+  }
+
+  function sendFrame(requestId: string) {
+    const text = composeText().trim()
+    if (!text) return
+    sendStreamMessage(requestId, text).catch(() => {})
+    setComposeText('')
+  }
 
   // Persist any edit to the active request (method/url/headers/params/body/
   // auth all flow through this same store object) — debounced so typing
@@ -91,27 +142,85 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
         <div class="flex h-full flex-col">
           <div class="flex items-center gap-2 border-b border-edge p-2">
             <select
-              class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-accent-fg focus:outline-none focus:ring-1 focus:ring-edge-strong"
-              value={req().method}
-              onChange={(e) => setAppState('requests', activeIndex(), 'method', e.currentTarget.value)}
+              class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge-strong"
+              value={req().protocol || 'http'}
+              onChange={(e) => setAppState('requests', activeIndex(), 'protocol', e.currentTarget.value as ProtocolKind)}
+              title="Protocol"
             >
-              {METHODS.map((m) => (
-                <option value={m}>{m}</option>
+              {PROTOCOLS.map((p) => (
+                <option value={p.value}>{p.label}</option>
               ))}
             </select>
+            <Show when={usesHttpMethod(req().protocol || 'http')}>
+              <select
+                class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-accent-fg focus:outline-none focus:ring-1 focus:ring-edge-strong"
+                value={req().method}
+                onChange={(e) => setAppState('requests', activeIndex(), 'method', e.currentTarget.value)}
+              >
+                {METHODS.map((m) => (
+                  <option value={m}>{m}</option>
+                ))}
+              </select>
+            </Show>
             <input
               class="flex-1 rounded bg-field px-2 py-1 font-mono text-sm text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
               value={req().url}
-              placeholder="https://api.example.com/{{ path }}"
+              placeholder={URL_PLACEHOLDER[req().protocol || 'http']}
               onInput={(e) => setAppState('requests', activeIndex(), 'url', e.currentTarget.value)}
             />
-            <button
-              class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
-              onClick={() => props.onSend(req().id)}
+            <Show
+              when={isStreamingProtocol(req().protocol || 'http')}
+              fallback={
+                <button
+                  class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
+                  onClick={() => props.onSend(req().id)}
+                >
+                  Send
+                </button>
+              }
             >
-              Send
-            </button>
+              <Show
+                when={streaming(req().id)}
+                fallback={
+                  <button
+                    class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
+                    onClick={() => connect(req().id)}
+                  >
+                    Connect
+                  </button>
+                }
+              >
+                <button
+                  class="rounded border border-edge-strong bg-field px-3 py-1 text-sm font-medium text-danger hover:bg-raised"
+                  onClick={() => stopStream(req().id)}
+                >
+                  Disconnect
+                </button>
+              </Show>
+            </Show>
           </div>
+
+          {/* WebSocket message composer — only while connected. SSE is
+              receive-only, so it never shows this. */}
+          <Show when={req().protocol === 'websocket' && streaming(req().id)}>
+            <div class="flex items-center gap-2 border-b border-edge px-2 py-1.5">
+              <input
+                class="flex-1 rounded bg-field px-2 py-1 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
+                placeholder="Message to send…"
+                value={composeText()}
+                onInput={(e) => setComposeText(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') sendFrame(req().id)
+                }}
+              />
+              <button
+                class="rounded bg-raised px-3 py-1 text-xs font-medium text-ink-dim hover:bg-elevated"
+                onClick={() => sendFrame(req().id)}
+              >
+                Send frame
+              </button>
+            </div>
+          </Show>
 
           <div class="flex items-center gap-1 border-b border-edge px-2">
             <For each={TABS}>

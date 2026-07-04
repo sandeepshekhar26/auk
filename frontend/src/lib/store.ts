@@ -94,3 +94,21 @@ export function closeTab(requestId: string) {
 export function pushStreamEvent(evt: StreamEvent) {
   setAppState('streamEvents', (events) => [...events.slice(-499), evt])
 }
+
+// Live WebSocket/SSE sessions started from the GUI, keyed by the request id
+// that opened them → the backend session id. Lets a request's editor show
+// Connect vs Disconnect (and a message composer) without threading the id
+// through props; see lib/stream.ts for the session lifecycle.
+export const [activeStreams, setActiveStreams] = createSignal<Record<string, string>>({})
+
+export function setActiveStream(requestId: string, sessionId: string) {
+  setActiveStreams((m) => ({ ...m, [requestId]: sessionId }))
+}
+
+export function clearActiveStream(requestId: string) {
+  setActiveStreams((m) => {
+    const next = { ...m }
+    delete next[requestId]
+    return next
+  })
+}

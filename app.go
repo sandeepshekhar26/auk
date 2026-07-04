@@ -64,6 +64,12 @@ type App struct {
 	// Allow/Deny modal, keyed by approval id.
 	approvalMu sync.Mutex
 	approvals  map[string]chan bool
+
+	// streamSessions holds live WebSocket/SSE connections started from the GUI
+	// (StartStream), keyed by session id — see stream.go. Distinct from the
+	// request/response Send path, which never stays open.
+	streamMu       sync.Mutex
+	streamSessions map[string]*streamSession
 }
 
 func NewApp() *App {
@@ -85,6 +91,8 @@ func NewApp() *App {
 		mcpClients:   map[string]*mcpclient.Client{},
 		mcpConnLocks: map[string]*sync.Mutex{},
 		approvals:    map[string]chan bool{},
+
+		streamSessions: map[string]*streamSession{},
 	}
 	// Replace the default allow-all policy: GUI/CLI/chain origins stay
 	// unrestricted, but MCP-initiated mutating requests must be approved in
@@ -134,6 +142,7 @@ func (a *App) shutdown(context.Context) {
 	}
 	wg.Wait()
 
+	a.stopAllStreams()
 	a.stopMCP()
 }
 

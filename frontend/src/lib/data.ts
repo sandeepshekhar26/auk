@@ -146,3 +146,19 @@ export function saveRequestDebounced(req: RequestDef, delayMs = 400): void {
     }, delayMs),
   )
 }
+
+/**
+ * Persists any pending debounced edit for a request immediately and awaits it.
+ * Call this before an action that resolves the request from the backend store
+ * (StartStream) so it can't race the 400ms save window and act on stale
+ * protocol/URL/body — e.g. picking WebSocket then clicking Connect at once.
+ */
+export async function flushRequestSave(requestId: string): Promise<void> {
+  const existing = saveTimers.get(requestId)
+  if (existing) {
+    clearTimeout(existing)
+    saveTimers.delete(requestId)
+  }
+  const req = appState.requests.find((r) => r.id === requestId)
+  if (req) await wails.UpdateRequest(models.RequestDef.createFrom(req))
+}

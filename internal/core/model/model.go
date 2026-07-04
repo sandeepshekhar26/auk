@@ -216,6 +216,27 @@ func ReasonPhrase(fullStatus string) string {
 	return fullStatus
 }
 
+// StreamEvent is one frame of a live WebSocket/SSE session as surfaced to the
+// GUI (the engine's internal core.Event is the backend equivalent; this is the
+// JSON-tagged transport shape the StreamConsole renders). frontend/src/types.ts
+// mirrors this by hand.
+type StreamEvent struct {
+	SessionID string `json:"sessionId"`
+	Kind      string `json:"kind"`      // "ws" | "sse" | "grpc" | "perf"
+	Direction string `json:"direction"` // "sent" | "received" | "meta"
+	Payload   string `json:"payload"`
+	Timestamp string `json:"timestamp"`
+}
+
+// StreamDrain is the pull-based batch the GUI fetches after a "stream:<id>"
+// wake-up: the frames it hasn't seen yet, the cursor to pass next time, and
+// whether the session has closed.
+type StreamDrain struct {
+	Frames []StreamEvent `json:"frames"`
+	Cursor int           `json:"cursor"`
+	Closed bool          `json:"closed"`
+}
+
 // TimingBreakdown is one hop's latency split into the phases net/http's
 // httptrace can observe.
 type TimingBreakdown struct {
