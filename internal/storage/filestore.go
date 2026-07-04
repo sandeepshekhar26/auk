@@ -403,6 +403,24 @@ func (s *FileStore) ListEnvironments(workspaceID model.ID) []model.Environment {
 	return out
 }
 
+// ListEnvironmentsRaw returns environments exactly as stored on disk —
+// unlike ListEnvironments, it never resolves Secrets values from the OS
+// keychain. Any caller that doesn't need real secret values for templating
+// (workspace export is the motivating case: a keychain value must never end
+// up written into a file the user might commit, share, or attach somewhere)
+// should use this instead of ListEnvironments.
+func (s *FileStore) ListEnvironmentsRaw(workspaceID model.ID) []model.Environment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.Environment, 0)
+	for _, e := range s.environments {
+		if workspaceID == "" || e.WorkspaceID == workspaceID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (s *FileStore) withResolvedSecretsLocked(e model.Environment) model.Environment {
 	if len(e.Secrets) == 0 {
 		return e

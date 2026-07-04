@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"apitool/internal/appcore"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
+	"apitool/internal/exporter"
 	"apitool/internal/gitops"
 	"apitool/internal/importer"
 	"apitool/internal/jsonpath"
@@ -208,6 +210,59 @@ func (a *App) UpdateFolder(f model.Folder) error {
 // ListEnvironments is bound to the frontend.
 func (a *App) ListEnvironments(workspaceID string) []model.Environment {
 	return a.store.ListEnvironments(workspaceID)
+}
+
+// exportWorkspaceJSON assembles a workspace's folders, requests, and
+// environments (secret values excluded — see internal/exporter.Export) into
+// the JSON document ExportWorkspace writes to disk. Split out from
+// ExportWorkspace so this assembly step — where the actual data-handling
+// risk lives — is unit-testable without a native save dialog in the loop.
+func (a *App) exportWorkspaceJSON(workspaceID, workspaceName string) (string, error) {
+	return exporter.Export(
+		workspaceName,
+		a.store.ListFolders(workspaceID),
+		a.store.ListRequests(workspaceID),
+		a.store.ListEnvironmentsRaw(workspaceID),
+	)
+}
+
+// ExportWorkspace renders one workspace as a single indented JSON document
+// and prompts the user with a native save dialog to choose where to write
+// it. Returns the saved path, or "" (no error) if the user cancels the
+// dialog.
+func (a *App) ExportWorkspace(workspaceID string) (string, error) {
+	var wsName string
+	for _, w := range a.store.ListWorkspaces() {
+		if w.ID == workspaceID {
+			wsName = w.Name
+			break
+		}
+	}
+
+	doc, err := a.exportWorkspaceJSON(workspaceID, wsName)
+	if err != nil {
+		return "", err
+	}
+
+	defaultName := strings.ToLower(strings.ReplaceAll(wsName, " ", "-"))
+	if defaultName == "" {
+		defaultName = "workspace"
+	}
+	path, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "Export Workspace",
+		DefaultFilename: defaultName + ".auk.json",
+		Filters:         []wailsruntime.FileFilter{{DisplayName: "JSON", Pattern: "*.json"}},
+	})
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		return "", nil
+	}
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		return "", fmt.Errorf("write export file: %w", err)
+	}
+	return path, nil
 }
 
 // ListHistory is bound to the frontend.

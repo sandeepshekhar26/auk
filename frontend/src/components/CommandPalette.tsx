@@ -7,13 +7,26 @@ import {
   setShortcutSheetOpen,
   setSettingsOpen,
   setImportModalOpen,
+  setLoadError,
   streamConsoleOpen,
   setStreamConsoleOpen,
   openExplorer,
 } from '../lib/store'
 import { createRequest } from '../lib/data'
 import { setTheme } from '../lib/theme'
+import { wails } from '../lib/wails'
 import type { CommandItem } from '../types'
+
+// SaveFileDialog returning "" means the user cancelled — a normal outcome,
+// not a failure, so only a thrown error surfaces through loadError.
+async function exportActiveWorkspace() {
+  if (!appState.activeWorkspaceId) return
+  try {
+    await wails.ExportWorkspace(appState.activeWorkspaceId)
+  } catch (err) {
+    setLoadError(err instanceof Error ? err.message : String(err))
+  }
+}
 
 const GROUP_LABEL: Record<CommandItem['group'], string> = {
   action: 'Actions',
@@ -41,6 +54,7 @@ export default function CommandPalette() {
       },
       { id: 'action:browse-history', title: 'Browse History', group: 'action', run: () => openExplorer('history') },
       { id: 'action:import', title: 'Import…', group: 'action', run: () => setImportModalOpen(true) },
+      { id: 'action:export', title: 'Export Workspace…', group: 'action', run: () => void exportActiveWorkspace() },
       {
         id: 'action:stream-console',
         title: streamConsoleOpen() ? 'Hide Stream Console' : 'Show Stream Console',

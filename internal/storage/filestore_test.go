@@ -217,6 +217,59 @@ func TestFileStore_EnvironmentSecretMissingFromKeyringResolvesEmpty(t *testing.T
 	}
 }
 
+// TestFileStore_ListEnvironmentsRawNeverResolvesSecrets guards the export
+// feature's safety property at the real storage layer (not a hand-built
+// struct): ListEnvironments resolves the real keychain value as designed,
+// but ListEnvironmentsRaw — what workspace export must use — never touches
+// the SecretStore at all, through a real FileStore + fake keychain, not a
+// mock of the redaction logic itself.
+func TestFileStore_ListEnvironmentsRawNeverResolvesSecrets(t *testing.T) {
+	fs, _ := newTestFileStore(t)
+
+	env := model.Environment{
+		ID: "env1", WorkspaceID: "ws1", Name: "Prod",
+		Variables: []model.KeyValue{
+			{Key: "baseUrl", Value: "https://api.example.com", Enabled: true},
+			{Key: "apiKey", Value: "", Enabled: true},
+		},
+		Secrets: []string{"apiKey"},
+	}
+	if err := fs.PutEnvironment(env, map[string]string{"apiKey": "sk-live-do-not-leak"}); err != nil {
+		t.Fatalf("PutEnvironment: %v", err)
+	}
+
+	resolved, err := fs.GetEnvironment("env1")
+	if err != nil {
+		t.Fatalf("GetEnvironment: %v", err)
+	}
+	if got := valueFor(resolved.Variables, "apiKey"); got != "sk-live-do-not-leak" {
+		t.Fatalf("sanity check failed: GetEnvironment should resolve the real secret, got %q", got)
+	}
+
+	raw := fs.ListEnvironmentsRaw("ws1")
+	if len(raw) != 1 {
+		t.Fatalf("got %d environments, want 1", len(raw))
+	}
+	if got := valueFor(raw[0].Variables, "apiKey"); got != "" {
+		t.Fatalf("ListEnvironmentsRaw resolved a secret value (got %q) — it must never touch the SecretStore", got)
+	}
+	if got := valueFor(raw[0].Variables, "baseUrl"); got != "https://api.example.com" {
+		t.Fatalf("ListEnvironmentsRaw lost a non-secret variable: got %q", got)
+	}
+	if len(raw[0].Secrets) != 1 || raw[0].Secrets[0] != "apiKey" {
+		t.Fatalf("got Secrets %v, want [apiKey] (names are not sensitive, should still be present)", raw[0].Secrets)
+	}
+}
+
+func valueFor(vars []model.KeyValue, key string) string {
+	for _, kv := range vars {
+		if kv.Key == key {
+			return kv.Value
+		}
+	}
+	return ""
+}
+
 func TestFileStore_AppendAndListHistory(t *testing.T) {
 	fs, _ := newTestFileStore(t)
 

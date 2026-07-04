@@ -13,7 +13,7 @@ import StreamConsole from './components/StreamConsole'
 import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
 import McpToolView from './components/McpToolView'
-import { appState, mcpToolView, setExplorerOpen, setMcpApprovals } from './lib/store'
+import { appState, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals } from './lib/store'
 import { events, wails } from './lib/wails'
 import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
@@ -23,7 +23,6 @@ import type { ResponseData } from './types'
 export default function App() {
   const [response, setResponse] = createSignal<ResponseData | null>(null)
   const [sending, setSending] = createSignal(false)
-  const [loadError, setLoadError] = createSignal<string | null>(null)
 
   onMount(() => {
     // Theme first so the correct colors paint before data arrives; a

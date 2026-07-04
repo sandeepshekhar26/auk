@@ -67,6 +67,12 @@ export const [shortcutSheetOpen, setShortcutSheetOpen] = createSignal(false)
 export const [streamConsoleOpen, setStreamConsoleOpen] = createSignal(false)
 export const [settingsOpen, setSettingsOpen] = createSignal(false)
 
+// App-wide dismissable error banner (rendered once, at the top of App.tsx).
+// Originally local to App.tsx for its own load-time failures; lifted here so
+// any component (e.g. CommandPalette's "Export Workspace…") can surface a
+// failure through the same banner instead of each needing its own.
+export const [loadError, setLoadError] = createSignal<string | null>(null)
+
 // Pending MCP approval prompts (agent-initiated mutating requests waiting on
 // Allow/Deny). A queue: multiple agent calls can stack up.
 export interface MCPApproval {

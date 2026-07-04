@@ -99,7 +99,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 ### Import / export
 - [x] Import: OpenAPI 3.0/3.1, Swagger 2.0, Postman Collection v2/v2.1, cURL — Insomnia v4+ not built
 - [x] Copy as cURL / Paste cURL (round-trip individual requests)
-- [ ] Export workspace as single JSON file (not built yet — this line was also marked done prematurely in an earlier pass, same issue as the code-snippet line above; corrected 2026-07-05)
+- [x] Export workspace as single JSON file (2026-07-05; "Export Workspace…" in the command palette, native save dialog). Environment secret VALUES are never included — a new `FileStore.ListEnvironmentsRaw` never resolves the OS keychain (unlike `ListEnvironments`, which does — that distinction matters and is guarded by tests at both the storage and exporter layer, including one that plants a real secret through the actual `PutEnvironment` path and asserts it's absent from the exported JSON). Not re-importable yet (no round trip through the "Import…" modal) — a natural follow-up, not built here to keep this change scoped to export.
 - [ ] OpenAPI sync (keep workspace synced to a spec)
 
 ### Git sync & file storage
