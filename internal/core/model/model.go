@@ -202,6 +202,20 @@ type ResponseData struct {
 	RedirectChain []RedirectHop `json:"redirectChain,omitempty"`
 }
 
+// ReasonPhrase extracts just the reason phrase from Go's http.Response.Status,
+// which is the full status line ("200 OK", "404 Not Found"). StatusText is
+// meant to hold only the reason ("OK"), so callers that render code + reason
+// separately don't end up doubling the code ("200 200 OK"). Everything after
+// the first space is the reason; a status with no space is returned as-is.
+func ReasonPhrase(fullStatus string) string {
+	for i := 0; i < len(fullStatus); i++ {
+		if fullStatus[i] == ' ' {
+			return fullStatus[i+1:]
+		}
+	}
+	return fullStatus
+}
+
 // TimingBreakdown is one hop's latency split into the phases net/http's
 // httptrace can observe.
 type TimingBreakdown struct {

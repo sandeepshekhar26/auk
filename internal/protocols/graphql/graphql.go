@@ -104,7 +104,7 @@ func (c *Client) Execute(ctx context.Context, sess *core.Session, req model.Requ
 	resp := model.ResponseData{
 		RequestID:  req.ID,
 		Status:     httpResp.StatusCode,
-		StatusText: httpResp.Status,
+		StatusText: model.ReasonPhrase(httpResp.Status),
 		Headers:    headers,
 		BodyBase64: base64.StdEncoding.EncodeToString(bodyBytes),
 		BodySize:   len(bodyBytes),
