@@ -130,7 +130,7 @@ export interface RequestBody {
   graphqlVariables?: string
 }
 
-export type AuthKind = 'none' | 'basic' | 'bearer' | 'apikey' | 'jwt' | 'oauth2'
+export type AuthKind = 'none' | 'basic' | 'bearer' | 'apikey' | 'jwt' | 'oauth2' | 'awsSigV4'
 
 export interface AuthConfig {
   kind: AuthKind
@@ -139,6 +139,7 @@ export interface AuthConfig {
   apikey?: { key: string; value: string; in: 'header' | 'query' }
   jwt?: { secret: string; algorithm: string; claims: string }
   oauth2?: { clientId: string; clientSecret: string; tokenUrl: string; scopes?: string[] }
+  awsSigV4?: { accessKeyId: string; secretAccessKey: string; region: string; service: string; sessionToken?: string }
 }
 
 export interface Environment {

@@ -61,21 +61,23 @@ type RequestBody struct {
 type AuthKind string
 
 const (
-	AuthNone   AuthKind = "none"
-	AuthBasic  AuthKind = "basic"
-	AuthBearer AuthKind = "bearer"
-	AuthAPIKey AuthKind = "apikey"
-	AuthJWT    AuthKind = "jwt"
-	AuthOAuth2 AuthKind = "oauth2"
+	AuthNone     AuthKind = "none"
+	AuthBasic    AuthKind = "basic"
+	AuthBearer   AuthKind = "bearer"
+	AuthAPIKey   AuthKind = "apikey"
+	AuthJWT      AuthKind = "jwt"
+	AuthOAuth2   AuthKind = "oauth2"
+	AuthAWSSigV4 AuthKind = "awsSigV4"
 )
 
 type AuthConfig struct {
-	Kind   AuthKind    `yaml:"kind" json:"kind"`
-	Basic  *BasicAuth  `yaml:"basic,omitempty" json:"basic,omitempty"`
-	Bearer *BearerAuth `yaml:"bearer,omitempty" json:"bearer,omitempty"`
-	APIKey *APIKeyAuth `yaml:"apikey,omitempty" json:"apikey,omitempty"`
-	JWT    *JWTAuth    `yaml:"jwt,omitempty" json:"jwt,omitempty"`
-	OAuth2 *OAuth2Auth `yaml:"oauth2,omitempty" json:"oauth2,omitempty"`
+	Kind     AuthKind      `yaml:"kind" json:"kind"`
+	Basic    *BasicAuth    `yaml:"basic,omitempty" json:"basic,omitempty"`
+	Bearer   *BearerAuth   `yaml:"bearer,omitempty" json:"bearer,omitempty"`
+	APIKey   *APIKeyAuth   `yaml:"apikey,omitempty" json:"apikey,omitempty"`
+	JWT      *JWTAuth      `yaml:"jwt,omitempty" json:"jwt,omitempty"`
+	OAuth2   *OAuth2Auth   `yaml:"oauth2,omitempty" json:"oauth2,omitempty"`
+	AWSSigV4 *AWSSigV4Auth `yaml:"awsSigV4,omitempty" json:"awsSigV4,omitempty"`
 }
 
 type BasicAuth struct {
@@ -113,6 +115,19 @@ type OAuth2Auth struct {
 	ClientSecret string   `yaml:"clientSecret" json:"clientSecret"`
 	TokenURL     string   `yaml:"tokenUrl" json:"tokenUrl"`
 	Scopes       []string `yaml:"scopes,omitempty" json:"scopes,omitempty"`
+}
+
+// AWSSigV4Auth carries the credentials + scope Signature Version 4 signs
+// with. SessionToken is optional (only set for temporary/STS credentials);
+// when present it's both sent as X-Amz-Security-Token and included in the
+// signature, matching the "add to canonical request" path some AWS services
+// require (see internal/auth/auth_sigv4.go).
+type AWSSigV4Auth struct {
+	AccessKeyID     string `yaml:"accessKeyId" json:"accessKeyId"`
+	SecretAccessKey string `yaml:"secretAccessKey" json:"secretAccessKey"`
+	Region          string `yaml:"region" json:"region"`
+	Service         string `yaml:"service" json:"service"`
+	SessionToken    string `yaml:"sessionToken,omitempty" json:"sessionToken,omitempty"`
 }
 
 type RequestDef struct {

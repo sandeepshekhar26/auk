@@ -1,7 +1,7 @@
 // Package auth applies credentials to a resolved request. Basic, Bearer,
-// API Key, JWT (HMAC signing), and OAuth2 (client-credentials grant only)
-// are implemented; AWS-SigV4/NTLM and OAuth2 authorization-code (with a
-// system-browser redirect) are explicitly deferred per
+// API Key, JWT (HMAC signing), OAuth2 (client-credentials grant only), and
+// AWS Signature Version 4 are implemented; NTLM and OAuth2 authorization-code
+// (with a system-browser redirect) are explicitly deferred per
 // docs/01-feature-roadmap.md — each is registered the same way once
 // implemented, so adding one never touches the engine.
 package auth
@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"time"
 
 	"apitool/internal/core"
 	"apitool/internal/core/model"
@@ -78,6 +79,11 @@ func (a *Applier) Apply(ctx context.Context, cfg model.AuthConfig, req core.Reso
 		}
 		req.Headers = append(req.Headers, model.KeyValue{Key: "Authorization", Value: "Bearer " + token, Enabled: true})
 		return req, nil
+	case model.AuthAWSSigV4:
+		if cfg.AWSSigV4 == nil {
+			return req, fmt.Errorf("aws sigv4 auth config missing")
+		}
+		return applyAWSSigV4(*cfg.AWSSigV4, req, time.Now())
 	default:
 		return req, fmt.Errorf("auth kind %q not yet implemented", cfg.Kind)
 	}

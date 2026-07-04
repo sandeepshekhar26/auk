@@ -9,6 +9,7 @@ const AUTH_KINDS: { value: AuthKind; label: string }[] = [
   { value: 'apikey', label: 'API Key' },
   { value: 'jwt', label: 'JWT' },
   { value: 'oauth2', label: 'OAuth 2.0' },
+  { value: 'awsSigV4', label: 'AWS Signature v4' },
 ]
 
 function Field(props: { label: string; children: any }) {
@@ -67,6 +68,17 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
       clientSecret: prev?.clientSecret ?? '',
       tokenUrl: prev?.tokenUrl ?? '',
       scopes: prev?.scopes ?? [],
+      [field]: value,
+    }))
+  }
+
+  function setAWSSigV4(field: 'accessKeyId' | 'secretAccessKey' | 'region' | 'service' | 'sessionToken', value: string) {
+    setAppState('requests', props.requestIndex, 'authRef', 'awsSigV4', (prev) => ({
+      accessKeyId: prev?.accessKeyId ?? '',
+      secretAccessKey: prev?.secretAccessKey ?? '',
+      region: prev?.region ?? '',
+      service: prev?.service ?? '',
+      sessionToken: prev?.sessionToken ?? '',
       [field]: value,
     }))
   }
@@ -205,6 +217,54 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
             />
           </Field>
           <p class="text-[11px] text-ink-faint">Client-credentials grant only. Scopes editing coming later.</p>
+        </div>
+      </Show>
+
+      <Show when={auth().kind === 'awsSigV4'}>
+        <div class="mt-3 flex max-w-sm flex-col gap-2">
+          <Field label="Access Key ID">
+            <input
+              class={inputClass}
+              placeholder="AKIA…"
+              value={auth().awsSigV4?.accessKeyId ?? ''}
+              onInput={(e) => setAWSSigV4('accessKeyId', e.currentTarget.value)}
+            />
+          </Field>
+          <Field label="Secret Access Key">
+            <input
+              type="password"
+              class={inputClass}
+              value={auth().awsSigV4?.secretAccessKey ?? ''}
+              onInput={(e) => setAWSSigV4('secretAccessKey', e.currentTarget.value)}
+            />
+          </Field>
+          <div class="flex gap-2">
+            <Field label="Region">
+              <input
+                class={inputClass}
+                placeholder="us-east-1"
+                value={auth().awsSigV4?.region ?? ''}
+                onInput={(e) => setAWSSigV4('region', e.currentTarget.value)}
+              />
+            </Field>
+            <Field label="Service">
+              <input
+                class={inputClass}
+                placeholder="execute-api, s3, es…"
+                value={auth().awsSigV4?.service ?? ''}
+                onInput={(e) => setAWSSigV4('service', e.currentTarget.value)}
+              />
+            </Field>
+          </div>
+          <Field label="Session token (optional)">
+            <input
+              class={inputClass}
+              placeholder="Only for temporary/STS credentials"
+              value={auth().awsSigV4?.sessionToken ?? ''}
+              onInput={(e) => setAWSSigV4('sessionToken', e.currentTarget.value)}
+            />
+          </Field>
+          <p class="text-[11px] text-ink-faint">Signs the request per AWS Signature Version 4 (Authorization + X-Amz-Date headers).</p>
         </div>
       </Show>
     </div>
