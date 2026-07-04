@@ -1,4 +1,5 @@
 import { Show, createEffect, createSignal, on, onCleanup, onMount } from 'solid-js'
+import ActivityRail from './components/ActivityRail'
 import Sidebar from './components/Sidebar'
 import RequestTabBar from './components/RequestTabBar'
 import RequestEditor from './components/RequestEditor'
@@ -9,10 +10,9 @@ import EnvironmentSelector from './components/EnvironmentSelector'
 import EnvironmentEditor from './components/EnvironmentEditor'
 import ImportCurlModal from './components/ImportCurlModal'
 import StreamConsole from './components/StreamConsole'
-import HistoryPanel from './components/HistoryPanel'
 import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
-import { appState, setImportModalOpen, setSettingsOpen, streamConsoleOpen, setStreamConsoleOpen, setMcpApprovals } from './lib/store'
+import { appState, setExplorerOpen, setMcpApprovals } from './lib/store'
 import { events, wails } from './lib/wails'
 import { createRequest, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
@@ -22,7 +22,6 @@ import type { ResponseData } from './types'
 export default function App() {
   const [response, setResponse] = createSignal<ResponseData | null>(null)
   const [sending, setSending] = createSignal(false)
-  const [showHistory, setShowHistory] = createSignal(false)
   const [loadError, setLoadError] = createSignal<string | null>(null)
 
   onMount(() => {
@@ -50,10 +49,15 @@ export default function App() {
     ),
   )
 
-  function onNewRequestShortcut(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+  function onGlobalShortcuts(e: KeyboardEvent) {
+    const meta = e.metaKey || e.ctrlKey
+    if (meta && e.key.toLowerCase() === 'n') {
       e.preventDefault()
       createRequest().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))
+    }
+    if (meta && e.key.toLowerCase() === 'b') {
+      e.preventDefault()
+      setExplorerOpen((v) => !v)
     }
   }
 
@@ -91,81 +95,53 @@ export default function App() {
 
   onMount(() => {
     window.addEventListener('apitool:send', onSendShortcut)
-    window.addEventListener('keydown', onNewRequestShortcut)
+    window.addEventListener('keydown', onGlobalShortcuts)
   })
   onCleanup(() => {
     window.removeEventListener('apitool:send', onSendShortcut)
-    window.removeEventListener('keydown', onNewRequestShortcut)
+    window.removeEventListener('keydown', onGlobalShortcuts)
   })
 
   return (
-    <div class="flex h-screen flex-col overflow-hidden">
-      <Show when={loadError()}>
-        <div class="flex items-center justify-between border-b border-danger-edge bg-danger-bg/60 px-3 py-1 text-xs text-danger">
-          <span>{loadError()}</span>
-          <button class="rounded px-2 py-0.5 hover:bg-danger-bg/60" onClick={() => setLoadError(null)}>
-            Dismiss
-          </button>
-        </div>
-      </Show>
-      <div class="flex h-8 items-center justify-end gap-2 border-b border-edge px-2">
-        <button
-          class="rounded bg-accent px-2 py-1 text-xs font-medium text-accent-contrast hover:bg-accent-hover"
-          onClick={() => createRequest().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))}
-        >
-          + New Request
-        </button>
-        <button
-          class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
-          onClick={() => setImportModalOpen(true)}
-        >
-          Import
-        </button>
-        <button
-          class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
-          classList={{ 'bg-raised text-ink': streamConsoleOpen() }}
-          onClick={() => setStreamConsoleOpen((v) => !v)}
-        >
-          Stream Console
-        </button>
-        <button
-          class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-raised hover:text-ink"
-          onClick={() => setSettingsOpen(true)}
-        >
-          Settings
-        </button>
-        <EnvironmentSelector />
-      </div>
-      <div class="flex flex-1 overflow-hidden">
-        <div class="flex flex-col">
-          <div class="flex-1 overflow-hidden">
-            <Sidebar />
-          </div>
-          <div class="flex h-56 flex-col border-r border-t border-edge bg-surface">
-            <button
-              class="flex items-center justify-between border-b border-edge px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted hover:text-ink-dim"
-              onClick={() => setShowHistory((v) => !v)}
-            >
-              History
-              <span class="text-ink-faint">{showHistory() ? '▾' : '▸'}</span>
+    <div class="flex h-screen overflow-hidden">
+      <ActivityRail />
+      <div class="relative flex flex-1 flex-col overflow-hidden">
+        <Show when={loadError()}>
+          <div class="flex items-center justify-between border-b border-danger-edge bg-danger-bg/60 px-3 py-1 text-xs text-danger">
+            <span>{loadError()}</span>
+            <button class="rounded px-2 py-0.5 hover:bg-danger-bg/60" onClick={() => setLoadError(null)}>
+              Dismiss
             </button>
-            <div class="flex-1 overflow-hidden" classList={{ hidden: !showHistory() }}>
-              <HistoryPanel />
-            </div>
+          </div>
+        </Show>
+
+        {/* Slim top strip — everything that used to be a row of always-on
+            buttons now lives in the command palette; this only keeps the one
+            thing worth glancing at (environment) plus a discoverable ⌘K hint. */}
+        <div class="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-edge px-3">
+          <span class="truncate text-xs font-medium text-ink-dim">
+            {appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)?.name ?? ''}
+          </span>
+          <div class="flex items-center gap-2">
+            <EnvironmentSelector />
           </div>
         </div>
-        <div class="flex flex-1 flex-col overflow-hidden">
-          <RequestTabBar />
-          <div class="flex flex-1 overflow-hidden">
-            <div class="flex-1 overflow-hidden">
-              <RequestEditor onSend={handleSend} />
-            </div>
-            <div class="w-[45%] overflow-hidden">
-              <ResponseViewer response={response()} loading={sending()} />
-            </div>
+
+        <RequestTabBar />
+        <div class="flex flex-1 overflow-hidden">
+          <div class="flex-1 overflow-hidden">
+            <RequestEditor onSend={handleSend} />
+          </div>
+          <div class="w-[45%] overflow-hidden">
+            <ResponseViewer response={response()} loading={sending()} />
           </div>
         </div>
+
+        {/* The explorer drawer is positioned fixed (see Sidebar.tsx) so it
+            overlays rather than pushing this layout — it can mount anywhere. */}
+        <Sidebar />
       </div>
+
       <CommandPalette />
       <ShortcutSheet />
       <EnvironmentEditor />

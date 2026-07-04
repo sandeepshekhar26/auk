@@ -1,5 +1,5 @@
 import { Show, createEffect, createMemo, createSignal, For, on } from 'solid-js'
-import { appState, setAppState } from '../lib/store'
+import { appState, setAppState, setCommandPaletteOpen } from '../lib/store'
 import { saveRequestDebounced } from '../lib/data'
 import type { KeyValue } from '../types'
 import KeyValueTable from './KeyValueTable'
@@ -187,11 +187,21 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
   )
 }
 
+// This app is built to be driven from the keyboard, so the empty state
+// makes ⌘K the hero rather than a footnote — it's the primary way to get
+// anywhere, not a bolted-on shortcut for people who already found the tree.
 function EmptyState() {
   return (
-    <div class="flex h-full flex-col items-center justify-center gap-2 text-ink-faint">
-      <p class="text-sm">No request open</p>
-      <p class="text-xs">Press ⌘K to search, or ⌘N to create a request</p>
+    <div class="flex h-full flex-col items-center justify-center gap-4 text-ink-faint">
+      <button
+        class="flex items-center gap-1.5 rounded-lg border border-edge-strong bg-field px-4 py-2 hover:bg-raised"
+        onClick={() => setCommandPaletteOpen(true)}
+      >
+        <kbd class="rounded border border-edge-strong bg-raised px-2 py-1 font-mono text-sm text-ink-dim">⌘</kbd>
+        <kbd class="rounded border border-edge-strong bg-raised px-2 py-1 font-mono text-sm text-ink-dim">K</kbd>
+        <span class="ml-2 text-sm text-ink-muted">to jump anywhere</span>
+      </button>
+      <p class="text-xs">or ⌘N for a new request, ⌘B to browse</p>
     </div>
   )
 }

@@ -1,8 +1,9 @@
-import { For, Show, createMemo, createSignal } from 'solid-js'
-import { appState, openTab, sidebarFilter, setSidebarFilter } from '../lib/store'
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { appState, openTab, sidebarFilter, setSidebarFilter, explorerOpen, explorerTab, setExplorerTab, setExplorerOpen } from '../lib/store'
 import { createRequest } from '../lib/data'
 import type { Folder, RequestDef } from '../types'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
+import HistoryPanel from './HistoryPanel'
 
 interface FolderNode {
   folder: Folder | null // null = synthetic root
@@ -52,8 +53,15 @@ function matchesRequest(req: RequestDef, query: string): boolean {
   return req.name.toLowerCase().includes(query) || req.url.toLowerCase().includes(query)
 }
 
+// Sidebar is the EXPLORER DRAWER: an on-demand overlay (⌘B / rail / palette),
+// not a permanently-docked tree — the structural departure from Postman/
+// Yaak's always-visible sidebar. It holds two sections (Requests / History)
+// behind an internal tab switcher, closes on Escape or a click outside, and
+// picking a request closes it automatically so the editor gets full width
+// back immediately.
 export default function Sidebar() {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
+  let filterInput: HTMLInputElement | undefined
 
   function toggleFolder(id: string) {
     setExpanded((prev) => {
@@ -75,6 +83,22 @@ export default function Sidebar() {
     // While filtering, force-expand every folder so matches deep in the tree stay visible.
     return filtering() || expanded().has(id)
   }
+
+  function pickRequest(id: string) {
+    openTab(id)
+    setExplorerOpen(false)
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && explorerOpen()) setExplorerOpen(false)
+  }
+  onMount(() => window.addEventListener('keydown', onKeyDown))
+  onCleanup(() => window.removeEventListener('keydown', onKeyDown))
+
+  // Autofocus the filter input whenever the drawer opens on the Requests tab.
+  createEffect(() => {
+    if (explorerOpen() && explorerTab() === 'requests') filterInput?.focus()
+  })
 
   function FolderRow(props: { node: FolderNode; depth: number }) {
     const folder = () => props.node.folder!
@@ -102,7 +126,7 @@ export default function Sidebar() {
         <button
           class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm text-ink-dim hover:bg-raised"
           style={{ 'padding-left': `${8 + props.depth * 14}px` }}
-          onClick={() => openTab(props.req.id)}
+          onClick={() => pickRequest(props.req.id)}
         >
           <span class="w-12 shrink-0 font-mono text-[10px] font-semibold text-accent-fg">{props.req.method}</span>
           <span class="truncate">{props.req.name}</span>
@@ -121,37 +145,82 @@ export default function Sidebar() {
   }
 
   return (
-    <div class="flex h-full w-64 flex-col border-r border-edge bg-surface">
-      <div class="border-b border-edge p-2">
-        <WorkspaceSwitcher />
-      </div>
-      <div class="p-2">
-        <input
-          class="w-full rounded bg-field px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-edge-strong"
-          placeholder="Filter requests…"
-          value={sidebarFilter()}
-          onInput={(e) => setSidebarFilter(e.currentTarget.value)}
-        />
-      </div>
-      <div class="flex-1 overflow-y-auto px-1 pb-2">
-        <Show when={isEmpty()}>
-          <div class="flex flex-col items-start gap-2 px-2 py-4">
-            <p class="text-xs text-ink-faint">No requests yet.</p>
-            <button
-              class="rounded bg-accent px-2 py-1 text-xs font-medium text-accent-contrast hover:bg-accent-hover"
-              onClick={() => void createRequest()}
-            >
-              + New Request
-            </button>
+    <Show when={explorerOpen()}>
+      {/* Transparent click-catcher — closes the drawer without dimming the
+          rest of the app (a heavy modal scrim would fight the "lightweight"
+          thesis for what is really just a navigation aid). */}
+      <div class="fixed inset-0 z-30" onClick={() => setExplorerOpen(false)} />
+      <div class="fixed bottom-0 left-12 top-0 z-40 flex w-72 flex-col border-r border-edge bg-surface shadow-2xl">
+        <div class="flex items-center gap-1 border-b border-edge p-2">
+          <button
+            class="flex-1 rounded px-2 py-1 text-xs font-medium"
+            classList={{
+              'bg-raised text-ink': explorerTab() === 'requests',
+              'text-ink-muted hover:text-ink-dim': explorerTab() !== 'requests',
+            }}
+            onClick={() => setExplorerTab('requests')}
+          >
+            Requests
+          </button>
+          <button
+            class="flex-1 rounded px-2 py-1 text-xs font-medium"
+            classList={{
+              'bg-raised text-ink': explorerTab() === 'history',
+              'text-ink-muted hover:text-ink-dim': explorerTab() !== 'history',
+            }}
+            onClick={() => setExplorerTab('history')}
+          >
+            History
+          </button>
+          <button
+            class="ml-1 rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-raised hover:text-ink-dim"
+            title="Close (Esc)"
+            onClick={() => setExplorerOpen(false)}
+          >
+            Esc
+          </button>
+        </div>
+
+        <Show when={explorerTab() === 'requests'}>
+          <div class="border-b border-edge p-2">
+            <WorkspaceSwitcher />
+          </div>
+          <div class="p-2">
+            <input
+              ref={filterInput}
+              class="w-full rounded bg-field px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-edge-strong"
+              placeholder="Filter requests…"
+              value={sidebarFilter()}
+              onInput={(e) => setSidebarFilter(e.currentTarget.value)}
+            />
+          </div>
+          <div class="flex-1 overflow-y-auto px-1 pb-2">
+            <Show when={isEmpty()}>
+              <div class="flex flex-col items-start gap-2 px-2 py-4">
+                <p class="text-xs text-ink-faint">No requests yet.</p>
+                <button
+                  class="rounded bg-accent px-2 py-1 text-xs font-medium text-accent-contrast hover:bg-accent-hover"
+                  onClick={() => void createRequest()}
+                >
+                  + New Request
+                </button>
+              </div>
+            </Show>
+            <Show when={!isEmpty() && noMatches()}>
+              <p class="px-2 py-4 text-xs text-ink-faint">No matches.</p>
+            </Show>
+            <Show when={!isEmpty() && !noMatches()}>
+              <TreeChildren node={tree()} depth={0} />
+            </Show>
           </div>
         </Show>
-        <Show when={!isEmpty() && noMatches()}>
-          <p class="px-2 py-4 text-xs text-ink-faint">No matches.</p>
-        </Show>
-        <Show when={!isEmpty() && !noMatches()}>
-          <TreeChildren node={tree()} depth={0} />
+
+        <Show when={explorerTab() === 'history'}>
+          <div class="flex-1 overflow-hidden">
+            <HistoryPanel />
+          </div>
         </Show>
       </div>
-    </div>
+    </Show>
   )
 }

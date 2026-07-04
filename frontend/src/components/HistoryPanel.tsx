@@ -1,5 +1,5 @@
 import { For, Show } from 'solid-js'
-import { appState, openTab } from '../lib/store'
+import { appState, openTab, setExplorerOpen } from '../lib/store'
 
 function relativeTime(timestamp: string): string {
   const then = new Date(timestamp).getTime()
@@ -26,7 +26,10 @@ export default function HistoryPanel() {
         {(h) => (
           <button
             class="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-raised"
-            onClick={() => openTab(h.requestId)}
+            onClick={() => {
+              openTab(h.requestId)
+              setExplorerOpen(false)
+            }}
           >
             <span class="font-mono font-semibold text-ink-muted">{h.method}</span>
             <span class="flex-1 truncate text-ink-dim">{h.requestName}</span>

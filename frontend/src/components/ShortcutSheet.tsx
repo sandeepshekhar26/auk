@@ -12,7 +12,8 @@ interface ShortcutEntry {
 }
 
 const SHORTCUTS: ShortcutEntry[] = [
-  { keys: ['⌘', 'K'], description: 'Open command palette' },
+  { keys: ['⌘', 'K'], description: 'Open command palette — the primary way to get anywhere' },
+  { keys: ['⌘', 'B'], description: 'Toggle the requests/history drawer' },
   { keys: ['⌘', 'Enter'], description: 'Send the active request' },
   { keys: ['⌘', 'N'], description: 'New request' },
   { keys: ['⌘', ','], description: 'Open Settings' },

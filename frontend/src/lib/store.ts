@@ -31,6 +31,19 @@ export const [appState, setAppState] = createStore<AppState>({
 export const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
 export const [sidebarFilter, setSidebarFilter] = createSignal('')
 
+// The "explorer" is the on-demand drawer (requests tree + history) that
+// replaces a permanently-docked sidebar — collapsed by default. ⌘B, the rail,
+// and the command palette all toggle the same signal; explorerTab picks
+// which section shows when it opens.
+export type ExplorerTab = 'requests' | 'history'
+export const [explorerOpen, setExplorerOpen] = createSignal(false)
+export const [explorerTab, setExplorerTab] = createSignal<ExplorerTab>('requests')
+
+export function openExplorer(tab: ExplorerTab) {
+  setExplorerTab(tab)
+  setExplorerOpen(true)
+}
+
 // UI-only open/closed flags for modals/panels. Components read+write these
 // directly; they do NOT own or duplicate this state locally, so multiple
 // components (e.g. EnvironmentSelector's "Manage" button and
