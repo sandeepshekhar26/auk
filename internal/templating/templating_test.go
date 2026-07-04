@@ -1,11 +1,14 @@
 package templating
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"apitool/internal/core/model"
 )
 
 func TestEncodeURL(t *testing.T) {
@@ -195,6 +198,28 @@ func TestTimestampOffset(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run(`"now" resolves relative to the current time, not a literal timestamp`, func(t *testing.T) {
+		before := time.Now().Unix()
+		got, err := e.funcs["timestamp.offset"]([]string{"now", "+1h"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		gotSecs, _ := strconv.ParseInt(got, 10, 64)
+		after := time.Now().Unix()
+		// gotSecs should be ~1h after "now", bounded by [before+3600, after+3600]
+		// to tolerate the (near-zero) time elapsed running the test itself.
+		if gotSecs < before+3600 || gotSecs > after+3600 {
+			t.Fatalf("got %d, want within [%d, %d]", gotSecs, before+3600, after+3600)
+		}
+	})
+
+	t.Run("empty string also means now", func(t *testing.T) {
+		_, err := e.funcs["timestamp.offset"]([]string{"", "+1h"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestTimestampFormat(t *testing.T) {
@@ -242,14 +267,52 @@ func TestFsRead(t *testing.T) {
 }
 
 func TestCookie(t *testing.T) {
-	e := New(nil)
-	t.Run("not wired yet", func(t *testing.T) {
-		_, err := e.funcs["cookie"]([]string{"session"})
+	t.Run("no cookie captured yet", func(t *testing.T) {
+		e := New(nil)
+		_, err := e.eval(context.Background(), "cookie(session)", "ws-1", nil, nil)
 		if err == nil {
 			t.Fatalf("expected error, got none")
 		}
-		if !strings.Contains(err.Error(), "not wired yet") {
+		if !strings.Contains(err.Error(), "no such cookie") {
 			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("reads a captured cookie for its workspace", func(t *testing.T) {
+		e := New(nil)
+		e.CaptureCookies("ws-1", []model.KeyValue{{Key: "Set-Cookie", Value: "session=abc123"}})
+
+		got, err := e.eval(context.Background(), "cookie(session)", "ws-1", nil, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "abc123" {
+			t.Fatalf("got %q, want %q", got, "abc123")
+		}
+	})
+
+	t.Run("workspace-scoped: not visible from a different workspace", func(t *testing.T) {
+		e := New(nil)
+		e.CaptureCookies("ws-1", []model.KeyValue{{Key: "Set-Cookie", Value: "session=abc123"}})
+
+		_, err := e.eval(context.Background(), "cookie(session)", "ws-2", nil, nil)
+		if err == nil {
+			t.Fatalf("expected error reading ws-1's cookie from ws-2, got none")
+		}
+	})
+
+	t.Run("resolves end-to-end through a request URL", func(t *testing.T) {
+		e := New(nil)
+		e.CaptureCookies("ws-1", []model.KeyValue{{Key: "Set-Cookie", Value: "token=xyz"}})
+
+		req := model.RequestDef{WorkspaceID: "ws-1", URL: "https://api.example.com/x?t=${cookie(token)}", Method: "GET"}
+		resolved, err := e.Resolve(context.Background(), req, nil, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := "https://api.example.com/x?t=xyz"
+		if resolved.URL != want {
+			t.Fatalf("got %q, want %q", resolved.URL, want)
 		}
 	})
 }

@@ -32,7 +32,7 @@ const usesHttpMethod = (p: ProtocolKind) => p === 'http' || p === 'graphql'
 const isStreamingProtocol = (p: ProtocolKind) => p === 'websocket' || p === 'sse'
 
 const URL_PLACEHOLDER: Record<ProtocolKind, string> = {
-  http: 'https://api.example.com/{{ path }}',
+  http: 'https://api.example.com/${path}',
   graphql: 'https://api.example.com/graphql',
   websocket: 'wss://example.com/socket',
   sse: 'https://example.com/events',

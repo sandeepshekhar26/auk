@@ -114,7 +114,7 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
           <Field label="Token">
             <input
               class={inputClass}
-              placeholder="{{ token }}"
+              placeholder="${token}"
               value={auth().bearer?.token ?? ''}
               onInput={(e) => setBearer(e.currentTarget.value)}
             />

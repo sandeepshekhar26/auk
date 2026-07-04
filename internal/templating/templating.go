@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"apitool/internal/cookiejar"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
 )
@@ -66,16 +67,26 @@ type ChainResolver interface {
 type Engine struct {
 	funcs    map[string]Func
 	resolver ChainResolver
+	cookies  *cookiejar.Jar
 }
 
 // New builds a templating Engine. resolver may be nil (e.g. in tests that
 // don't exercise response() refs); a nil resolver makes any response() ref
 // fail with a clear error instead of panicking.
 func New(resolver ChainResolver) *Engine {
-	e := &Engine{funcs: make(map[string]Func), resolver: resolver}
+	e := &Engine{funcs: make(map[string]Func), resolver: resolver, cookies: cookiejar.New()}
 	e.registerBuiltins()
 	e.registerExtra()
 	return e
+}
+
+// CaptureCookies feeds a response's Set-Cookie headers into this Engine's
+// per-workspace jar so a later ${cookie(name)} reference in the same
+// workspace can read them. core.Engine calls this after every response
+// (type-asserted off Templater, since the Templater interface itself doesn't
+// need to know about cookies — see core.Engine.RunRequest).
+func (e *Engine) CaptureCookies(workspaceID model.ID, headers []model.KeyValue) {
+	e.cookies.Capture(workspaceID, headers)
 }
 
 func (e *Engine) Register(name string, fn Func) {
@@ -192,6 +203,16 @@ func (e *Engine) eval(ctx context.Context, expr string, workspaceID model.ID, va
 			for _, a := range strings.Split(argsRaw, ",") {
 				args = append(args, strings.Trim(strings.TrimSpace(a), `'"`))
 			}
+		}
+		if name == "cookie" {
+			if len(args) < 1 {
+				return "", fmt.Errorf("cookie requires 1 argument: cookie(name)")
+			}
+			v, ok := e.cookies.Get(workspaceID, args[0])
+			if !ok {
+				return "", fmt.Errorf("cookie(%q): no such cookie captured yet in this workspace (cookie() reads Set-Cookie from earlier responses this session)", args[0])
+			}
+			return v, nil
 		}
 		if fn, ok := e.funcs[name]; ok {
 			return fn(args)

@@ -178,6 +178,17 @@ func (e *Engine) RunRequest(ctx context.Context, sessionID model.ID, requestID m
 		return resp, err
 	}
 
+	// Feed any Set-Cookie headers into the templater's per-workspace cookie
+	// jar so a later ${cookie(name)} reference in this workspace can read
+	// them. Not part of the Templater interface (most callers/tests don't
+	// need it) — a plain capability check, a no-op for any Templater that
+	// doesn't implement it.
+	if cc, ok := e.Templater.(interface {
+		CaptureCookies(model.ID, []model.KeyValue)
+	}); ok {
+		cc.CaptureCookies(req.WorkspaceID, resp.Headers)
+	}
+
 	// Evaluate declarative assertions against the response. They ride on the
 	// response object so every consumer (GUI card, CLI exit code, MCP result)
 	// sees the same verdict from the same code path.

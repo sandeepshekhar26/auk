@@ -56,8 +56,8 @@ The same check that fails your build fails the request right here.
 
 ### Pre-request scripting
 
-Templating (`{{ uuid }}`, `{{ timestamp.iso8601 }}`, `{{ hash.sha256(...) }}`,
-`{{ encode.base64(...) }}`, chaining off a previous response) covers the
+Templating (`${uuid}`, `${timestamp.iso8601}`, `${hash.sha256(...)}`,
+`${encode.base64(...)}`, chaining off a previous response) covers the
 common cases without any code. For everything else, a pre-request script
 (real JavaScript, sandboxed — no filesystem/network/process access) can
 read `ctx.request` and set headers before the request goes out:
@@ -147,10 +147,10 @@ via the CLI.
 
 **Auth**: Basic, Bearer, API Key, JWT, OAuth2 (client credentials).
 
-**Templating**: `{{ uuid }}`, `{{ timestamp.unix / unixMillis / iso8601 }}`,
-`{{ hash.md5 / sha1 / sha256(...) }}`, `{{ encode.base64 / base64url(...) }}`,
-environment variables, and request chaining (reference a previous response's
-JSON by path).
+**Templating**: `${uuid}`, `${timestamp.unix / unixMillis / iso8601 / format(...) / offset(...)}`,
+`${hash.md5 / sha1 / sha256(...)}`, `${encode.base64 / base64url / url(...)}`,
+`${cookie(name)}`, environment variables, and request chaining (reference a
+previous response's JSON by path).
 
 **Pre-request scripting**: sandboxed JavaScript (no I/O), read `ctx.request`,
 call `ctx.setHeader(name, value)`, 2-second execution timeout.

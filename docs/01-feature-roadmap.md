@@ -3,6 +3,8 @@
 > Cross-platform API client (Wails: Go backend + web frontend). macOS first; Windows/Linux later. Local, git-friendly file storage; no mandatory cloud. This roadmap sequences (1) parity features inherited from Yaak, (2) the owner's differentiating features, and (3) recommended additions, then phases everything into shippable milestones.
 >
 > **Legend:** ★ = headline differentiator vs. Yaak/Postman/Insomnia/Bruno.
+>
+> **Status (2026-07-05):** checkboxes below reflect actual shipped state (this doc had never been updated as work landed — the `[ ]`s were stale, not accurate). Roughly: **v0.1 MVP is done**, **v0.5 is mostly done** (biggest gaps: OAuth1/NTLM/1Password auth, code-snippet gen beyond cURL, auto-update mechanics), **v1.0 is partial** (gRPC is unary-only — no streaming/`.proto` import; MCP Resources and full capability-grant UI are missing; no plugin runtime), **v2.0 is not started** (no Windows/Linux, no mock server, no HTTP/3, no cloud sync). See `api-tool-build-progress` session memory for the full shipped-feature list with dates.
 
 ---
 
@@ -11,63 +13,63 @@
 Full parity checklist. These are table-stakes an established Yaak user expects; none are differentiators on their own. (Yaak stack for reference: Tauri + Rust + React/TypeScript, MIT/source-available, offline-first, no telemetry.)
 
 ### Workspaces, collections & organization
-- [ ] Workspaces (top-level containers for requests, environments, settings)
-- [ ] Arbitrarily nested folders
+- [x] Workspaces (top-level containers for requests, environments, settings)
+- [x] Arbitrarily nested folders (model + sidebar tree support `parentId`; **folder creation UI + folder-scoped variables were still missing — see 2026-07-05 additions below**)
 - [ ] Folder/request settings inheritance (auth, headers, settings cascade down the tree)
-- [ ] Folder-scoped variables
-- [ ] Live sidebar filtering / request-tree search
-- [ ] Multiple OS windows (Wails v2 is single-window — see 6.6; multi-window is a v3 feature, so v1 ships one main window with in-app panels/tabs)
-- [ ] Multiple request tabs
-- [ ] Command palette (fuzzy launcher for navigation + actions)
+- [x] Folder-scoped variables (2026-07-05)
+- [x] Live sidebar filtering / request-tree search
+- [ ] Multiple OS windows (Wails v2 is single-window — see 6.6; multi-window is a v3 feature, so v1 ships one main window with in-app panels/tabs) — **deliberately deferred to a v3 port, not a gap**
+- [x] Multiple request tabs
+- [x] Command palette (fuzzy launcher for navigation + actions)
 
 ### Request types (protocols)
-- [ ] HTTP / REST (redirects, custom methods)
-- [ ] GraphQL (query editor, variables, schema doc explorer / introspection)
-- [ ] gRPC (unary + streaming; server reflection or proto files)
-- [ ] WebSocket (bidirectional, send/receive message log)
-- [ ] Server-Sent Events (SSE) streaming request type
+- [x] HTTP / REST (redirects, custom methods)
+- [x] GraphQL (query editor, variables; **schema doc explorer/introspection still missing**)
+- [x] gRPC (unary only — server reflection; **streaming and `.proto`-file import still missing**)
+- [x] WebSocket (bidirectional, interactive send/receive console)
+- [x] Server-Sent Events (SSE) streaming request type
 - [ ] Batch send (fire multiple requests at once)
 
 ### Environments & variable resolution
-- [ ] Named environments (dev/staging/prod)
+- [x] Named environments (dev/staging/prod)
 - [ ] Sub-environments with fallback to base workspace environment
-- [ ] Environment color-coding (avoid prod mistakes)
-- [ ] `${[variableName]}` reference syntax with autocomplete in every text input
-- [ ] Encrypted secrets via OS keychain (safe to commit whole workspace to git)
+- [x] Environment color-coding (avoid prod mistakes) (2026-07-05)
+- [x] `{{ functionName(args) }}` reference syntax (own grammar, not literal `${}`) — **autocomplete-while-typing in text inputs still missing**
+- [x] Encrypted secrets via OS keychain (safe to commit whole workspace to git) — `internal/storage/secrets.go`, real Keychain/Credential-Manager/Secret-Service backing via `go-keyring`, values never touch the synced YAML
 
 ### Templating & dynamic values (template functions)
-- [ ] `${functionName(args)}` syntax; nested functions
+- [x] `{{ functionName(args) }}` syntax; nested functions
 - [ ] Preview-vs-send render context (skip side effects during preview)
-- [ ] `uuid` (v4)
-- [ ] `timestamp.unix` / `unixMillis` / `iso8601`
-- [ ] `timestamp.format` / `timestamp.offset` (date formatting + arithmetic)
-- [ ] `hash.md5` / `sha1` / `sha256`
-- [ ] `encode.base64` / `base64url` / `encode.url`
-- [ ] `cookie` (read from cookie jar)
-- [ ] `fs.read` (read file contents)
+- [x] `uuid` (v4)
+- [x] `timestamp.unix` / `unixMillis` / `iso8601`
+- [x] `timestamp.format(unixSeconds, goLayout)` / `timestamp.offset(unixSeconds, duration)`
+- [x] `hash.md5` / `sha1` / `sha256`
+- [x] `encode.base64` / `base64url` / `url`
+- [x] `cookie(name)` (read from cookie jar) (2026-07-05 — was a stub returning "not wired yet"; now backed by a real per-workspace jar)
+- [x] `fs.read` (read file contents) — **note: this reads arbitrary local files at send time and is a different trust boundary than the pre-request script sandbox** (`internal/scripting` deliberately has zero ambient filesystem authority; this template function does not carry that same restriction). Flagging as a known tradeoff worth being aware of for a public repo, not something changed in this pass.
 - [ ] `json` / `xml` / `regex` manipulation
 - [ ] `prompt` (ask user for input at send time)
 - [ ] `request.body` / `request.header` / `request.param` / `request.name`
-- [ ] `response.body` / `response.header` (pull from another request's last response)
-- [ ] Plugin-provided functions (Faker, TOTP, JWT generate/decode, shell, secret managers, date-add)
+- [x] `response.body` / `response.header` (pull from another request's last response) — response-chaining via `response('Name').path`
+- [ ] Plugin-provided functions (Faker, TOTP, JWT generate/decode, shell, secret managers, date-add) — blocked on the plugin runtime (not started)
 
 ### Request chaining (piping values between requests)
-- [ ] `response.*()` chaining via JSONPath (JSON) / XPath (XML)
-- [ ] Auto-send dependency (referenced request with no cached response is sent first)
+- [x] `response.*()` chaining via JSONPath (JSON) — XPath/XML not built (no XML body support yet)
+- [x] Auto-send dependency (referenced request with no cached response is sent first)
 - [ ] Chaining via environment variables (store a `response()` tag in an env var, reuse widely)
 
 ### Authentication (built-in)
-- [ ] Basic Auth
-- [ ] Bearer Token
-- [ ] API Key (header or query param)
+- [x] Basic Auth
+- [x] Bearer Token
+- [x] API Key (header or query param)
 - [ ] OAuth 1.0
-- [ ] OAuth 2.0 (multiple grant types; external system-browser flow)
-- [ ] JWT auth
-- [ ] AWS Signature v4
+- [x] OAuth 2.0 (client-credentials grant only — no multi-grant/external-browser flow yet)
+- [x] JWT auth
+- [x] AWS Signature v4 (2026-07-05)
 - [ ] NTLM
-- [ ] Client certificates (mTLS)
-- [ ] 1Password integration (pull secrets)
-- [ ] Custom auth via plugins (e.g. RFC 9421 HTTP Message Signatures)
+- [x] Client certificates (mTLS) — backend + tests existed already; request-level UI added 2026-07-05
+- [ ] 1Password integration (pull secrets) — needs the user's own 1Password CLI/account; not attempted without that decision
+- [ ] Custom auth via plugins (e.g. RFC 9421 HTTP Message Signatures) — blocked on the plugin runtime
 - [ ] Auth inheritance across workspace/folder/request levels
 
 ### Plugins & SDK
@@ -77,38 +79,40 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [ ] Plugin CLI (`generate`, `dev`, `build`, `publish`, `auth login`)
 - [ ] Public plugin directory / registry (install from settings)
 
+**None of Plugins & SDK is started.** This is a large, self-contained milestone (embedding a Node/npm-ecosystem runtime, a extension-point API surface, a CLI, a registry) — sizing it honestly as its own future project rather than folding a partial slice into a general sweep.
+
 ### Response viewing
-- [ ] JSON pretty (syntax-highlighted) + raw modes
-- [ ] Response filtering via JSONPath / XPath + plain-text filter for large bodies
+- [x] JSON pretty (syntax-highlighted) + raw modes
+- [x] Response filtering via JSONPath + plain-text filter for large bodies (JSONPath filter added 2026-07-05; XPath not built — no XML support)
 - [ ] Rich previews (HTML, images, binary)
-- [ ] Dedicated response headers tab
-- [ ] Timeline / debug tab (redirects, cookies, payload, headers, timing)
-- [ ] Streaming responses (SSE / WebSocket / gRPC live view)
-- [ ] Code-snippet generation from a request ("Copy as" for multiple languages)
+- [x] Dedicated response headers tab
+- [x] Timeline / debug tab (redirects, cookies, payload, headers, timing)
+- [x] Streaming responses (SSE / WebSocket live view; gRPC is unary-only, nothing to stream yet)
+- [x] Code-snippet generation from a request ("Copy as" cURL, Python `requests`, JS `fetch`, Go `net/http` added 2026-07-05)
 
 ### History, cookies & debugging
-- [ ] Per-request response history
-- [ ] Cookie jar per workspace with manual cookie editing
+- [x] Per-request response history
+- [ ] Cookie jar per workspace with manual cookie editing (an internal per-send `net/http/cookiejar` exists; no persistent workspace jar or edit UI)
 - [ ] Custom proxy support
-- [ ] Redirect warnings (cross-origin / insecure)
+- [x] Redirect warnings (cross-origin / insecure downgrade flagged in the redirect chain) (2026-07-05)
 
 ### Import / export
-- [ ] Import: OpenAPI 3.0/3.1, Swagger 2.0, Postman Collection v2/v2.1, Insomnia v4+, cURL
-- [ ] Copy as cURL / Paste cURL (round-trip individual requests)
-- [ ] Export workspace as single JSON file
+- [x] Import: OpenAPI 3.0/3.1, Swagger 2.0, Postman Collection v2/v2.1, cURL — Insomnia v4+ not built
+- [x] Copy as cURL / Paste cURL (round-trip individual requests)
+- [x] Export workspace as single JSON file (2026-07-05)
 - [ ] OpenAPI sync (keep workspace synced to a spec)
 
 ### Git sync & file storage
-- [ ] Local directory sync to plain-text YAML (one resource per file)
-- [ ] Built-in visual git client (init, branch, commit; status in sidebar; diff viewer)
-- [ ] Secrets excluded from sync by default; keychain-encrypted secrets safely committable
-- [ ] Works with Dropbox / any file-based sync (plain YAML)
+- [x] Local directory sync to plain-text YAML (one resource per file)
+- [x] Built-in visual git client (init, status, commit, push, log) — branch create/switch and a diff viewer not built (today's slice: status+log+commit+push)
+- [x] Secrets excluded from sync by default; keychain-encrypted secrets safely committable
+- [x] Works with Dropbox / any file-based sync (plain YAML) — true by construction, no code needed
 
 ### UX, themes & keyboard
-- [ ] Command palette + autocomplete everywhere + fully customizable hotkeys
-- [ ] Built-in + community themes; build-your-own themes
+- [x] Command palette + autocomplete everywhere *(command palette + fuzzy nav yes; "autocomplete everywhere" in every text field is not built)* + fully customizable hotkeys *(shortcuts are fixed today, not user-rebindable)*
+- [x] Built-in + community themes; build-your-own themes — System/Light/Dark shipped; the CSS-variable token system makes a new theme data-only, but no theme picker/import UI for custom ones yet
 - [ ] Adjustable panes / sidebar customization
-- [ ] One-click send ("Run") affordance
+- [x] One-click send ("Run") affordance
 - [ ] Auto-generated Markdown request docs
 
 ---

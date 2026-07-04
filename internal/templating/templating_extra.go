@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -58,26 +59,26 @@ func (e *Engine) registerExtra() {
 		if len(args) < 2 {
 			return "", fmt.Errorf("timestamp.offset requires 2 arguments: timestamp.offset(unixSeconds, offsetSpec)")
 		}
-		secs, err := strconv.ParseInt(args[0], 10, 64)
+		base, err := parseTimestampArg(args[0])
 		if err != nil {
-			return "", fmt.Errorf("timestamp.offset: invalid unix seconds %q: %w", args[0], err)
+			return "", fmt.Errorf("timestamp.offset: %w", err)
 		}
 		dur, err := time.ParseDuration(args[1])
 		if err != nil {
 			return "", fmt.Errorf("timestamp.offset: invalid offset %q: %w", args[1], err)
 		}
-		return strconv.FormatInt(time.Unix(secs, 0).Add(dur).Unix(), 10), nil
+		return strconv.FormatInt(base.Add(dur).Unix(), 10), nil
 	}
 
 	e.funcs["timestamp.format"] = func(args []string) (string, error) {
 		if len(args) < 2 {
 			return "", fmt.Errorf("timestamp.format requires 2 arguments: timestamp.format(unixSeconds, goLayout)")
 		}
-		secs, err := strconv.ParseInt(args[0], 10, 64)
+		base, err := parseTimestampArg(args[0])
 		if err != nil {
-			return "", fmt.Errorf("timestamp.format: invalid unix seconds %q: %w", args[0], err)
+			return "", fmt.Errorf("timestamp.format: %w", err)
 		}
-		return time.Unix(secs, 0).UTC().Format(args[1]), nil
+		return base.UTC().Format(args[1]), nil
 	}
 
 	e.funcs["fs.read"] = func(args []string) (string, error) {
@@ -91,14 +92,10 @@ func (e *Engine) registerExtra() {
 		return string(b), nil
 	}
 
-	// cookie() needs a cookie jar wired into the HTTP client
-	// (internal/protocols/http/http.go currently constructs
-	// &http.Client{Timeout: ...} with no CookieJar), so there is nowhere to
-	// read a cookie value from yet. Fail loudly rather than silently
-	// returning "".
-	e.funcs["cookie"] = func([]string) (string, error) {
-		return "", fmt.Errorf("cookie(): cookie jar not wired yet")
-	}
+	// cookie(name) is intentionally NOT registered in e.funcs — like
+	// response() refs, it needs workspace context that a bare Func closure
+	// doesn't receive, so it's special-cased in eval() instead (templating.go),
+	// backed by the per-workspace jar in internal/cookiejar.
 
 	// prompt() requires interactive UI to ask the user for input at send
 	// time, which the headless engine cannot provide. The GUI would need to
@@ -108,4 +105,21 @@ func (e *Engine) registerExtra() {
 	e.funcs["prompt"] = func([]string) (string, error) {
 		return "", fmt.Errorf("prompt() requires interactive UI — not supported when running headlessly")
 	}
+}
+
+// parseTimestampArg accepts either explicit unix seconds or the literal
+// "now"/"" for the current time. Plain numeric-seconds is the only form that
+// worked before 2026-07-05; "now" is a convenience added then, since the
+// `${...}` grammar doesn't support nesting `${timestamp.unix}` as an argument
+// to another function — without it, "current time + 1h" was unreachable
+// (you'd need an already-known unix timestamp to offset from).
+func parseTimestampArg(arg string) (time.Time, error) {
+	if arg == "" || strings.EqualFold(arg, "now") {
+		return time.Now(), nil
+	}
+	secs, err := strconv.ParseInt(arg, 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid unix seconds %q (or \"now\"): %w", arg, err)
+	}
+	return time.Unix(secs, 0), nil
 }
