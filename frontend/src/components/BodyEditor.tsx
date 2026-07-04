@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, Show } from 'solid-js'
+import { createEffect, on, onCleanup, Show, untrack } from 'solid-js'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
@@ -28,38 +28,48 @@ function JsonCodeMirror(props: { requestIndex: number; bodyIndex: number; text: 
   let view: EditorView | undefined
   let lastPushed: string | undefined
 
-  createEffect(() => {
-    const idx = props.requestIndex
-    const initial = props.text ?? ''
-    if (!container) return
+  // Keyed on requestIndex ONLY (via untrack for props.text) — this must NOT
+  // also track props.text, or every keystroke would round-trip through the
+  // store's docChanged -> setAppState -> props.text update and come back
+  // here, destroying + recreating the view (and dropping focus) after every
+  // single character. Syncing externally-changed text into a still-live view
+  // is the second effect's job below.
+  createEffect(
+    on(
+      () => props.requestIndex,
+      (idx) => {
+        if (!container) return
 
-    if (view) {
-      view.destroy()
-      view = undefined
-    }
+        if (view) {
+          view.destroy()
+          view = undefined
+        }
 
-    lastPushed = initial
-    view = new EditorView({
-      state: EditorState.create({
-        doc: initial,
-        extensions: [
-          lineNumbers(),
-          history(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          json(),
-          syntaxHighlighting(jsonHighlightStyle),
-          editorTheme,
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged) return
-            const text = update.state.doc.toString()
-            lastPushed = text
-            setAppState('requests', idx, 'body', 'text', text)
+        const initial = untrack(() => props.text) ?? ''
+        lastPushed = initial
+        view = new EditorView({
+          state: EditorState.create({
+            doc: initial,
+            extensions: [
+              lineNumbers(),
+              history(),
+              keymap.of([...defaultKeymap, ...historyKeymap]),
+              json(),
+              syntaxHighlighting(jsonHighlightStyle),
+              editorTheme,
+              EditorView.updateListener.of((update) => {
+                if (!update.docChanged) return
+                const text = update.state.doc.toString()
+                lastPushed = text
+                setAppState('requests', idx, 'body', 'text', text)
+              }),
+            ],
           }),
-        ],
-      }),
-      parent: container,
-    })
-  })
+          parent: container,
+        })
+      },
+    ),
+  )
 
   createEffect(() => {
     if (!view) return
@@ -91,16 +101,19 @@ export default function BodyEditor(props: { requestIndex: number }) {
     setAppState('requests', props.requestIndex, 'body', 'formFields', index, field as any, value as any)
   }
 
+  // See the matching comment in RequestEditor's addRow: Go's omitempty
+  // serializes an empty formFields slice as JSON null, and a default
+  // parameter (`= []`) doesn't catch null, only undefined — `?? []` does.
   function addFormField() {
-    setAppState('requests', props.requestIndex, 'body', 'formFields', (fields: KeyValue[] = []) => [
-      ...fields,
+    setAppState('requests', props.requestIndex, 'body', 'formFields', (fields: KeyValue[] | null | undefined) => [
+      ...(fields ?? []),
       { key: '', value: '', enabled: true },
     ])
   }
 
   function removeFormField(index: number) {
-    setAppState('requests', props.requestIndex, 'body', 'formFields', (fields: KeyValue[] = []) =>
-      fields.filter((_, i) => i !== index),
+    setAppState('requests', props.requestIndex, 'body', 'formFields', (fields: KeyValue[] | null | undefined) =>
+      (fields ?? []).filter((_, i) => i !== index),
     )
   }
 

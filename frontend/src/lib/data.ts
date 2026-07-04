@@ -14,16 +14,30 @@ let saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 // fields as `?: T` (possibly undefined); our hand-written types.ts (used
 // throughout the rest of the app) uses `T | null` instead. Normalize at
 // this one boundary rather than letting `undefined` leak into components.
+//
+// omitempty ALSO turns an empty/nil Go slice into JSON `null` (not `[]`),
+// even for fields types.ts declares as plain (non-nullable) arrays like
+// `headers`/`params`/`formFields`/`variables`/`secrets`. Editors that add a
+// row do `setAppState(..., (rows = []) => [...rows, x])` — a default
+// parameter only covers `undefined`, so a `null` from the backend slipped
+// through and `[...null, x]` threw silently inside the store's updater,
+// making "+ Add row" a no-op with no visible error on any request/
+// environment that started with no rows. Coalescing null -> [] here, once,
+// for every array field guarantees the invariant types.ts already claims,
+// instead of patching every call site that mutates one of these arrays.
 function normalizeRequest(r: wailsModel.RequestDef): RequestDef {
   // Go's BodyKind/AuthKind are string-backed enums; Wails' TS generator
   // widens them to `string` since it doesn't preserve the underlying enum
   // literals. The Go side only ever produces valid enum values, so this
   // narrowing cast is safe.
+  const body = (r.body ?? null) as RequestDef['body']
   return {
     ...r,
     protocol: r.protocol as RequestDef['protocol'],
     folderId: r.folderId ?? null,
-    body: (r.body ?? null) as RequestDef['body'],
+    headers: r.headers ?? [],
+    params: r.params ?? [],
+    body: body ? { ...body, formFields: body.formFields ?? [] } : null,
     authRef: (r.authRef ?? null) as RequestDef['authRef'],
     perf: (r.perf ?? null) as RequestDef['perf'],
     assertions: (r.assertions ?? null) as RequestDef['assertions'],
@@ -33,7 +47,7 @@ function normalizeFolder(f: wailsModel.Folder): Folder {
   return { ...f, parentId: f.parentId ?? null }
 }
 function normalizeEnvironment(e: wailsModel.Environment): Environment {
-  return { ...e, color: e.color ?? null }
+  return { ...e, color: e.color ?? null, variables: e.variables ?? [], secrets: e.secrets ?? [] }
 }
 
 /** Loads the workspace list and, if none is active yet, selects the first one. */

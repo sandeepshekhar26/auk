@@ -58,16 +58,25 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
     setAppState('requests', idx, field, index, key as any, value as any)
   }
 
+  // Go's omitempty serializes an empty/nil headers-or-params slice as JSON
+  // null, not []. A default parameter (`rows = []`) only fires for
+  // `undefined`, so `null` slipped through and `[...null, x]` threw —
+  // silently, inside the store's updater, with no visible error — meaning
+  // "+ Add row" did nothing on any request whose headers/params started
+  // empty. `?? []` inside the body catches null AND undefined.
   function addRow(field: 'headers' | 'params') {
     const idx = activeIndex()
     if (idx < 0) return
-    setAppState('requests', idx, field, (rows: KeyValue[] = []) => [...rows, { key: '', value: '', enabled: true }])
+    setAppState('requests', idx, field, (rows: KeyValue[] | null | undefined) => [
+      ...(rows ?? []),
+      { key: '', value: '', enabled: true },
+    ])
   }
 
   function removeRow(field: 'headers' | 'params', index: number) {
     const idx = activeIndex()
     if (idx < 0) return
-    setAppState('requests', idx, field, (rows: KeyValue[] = []) => rows.filter((_, i) => i !== index))
+    setAppState('requests', idx, field, (rows: KeyValue[] | null | undefined) => (rows ?? []).filter((_, i) => i !== index))
   }
 
   function enabledCount(rows: KeyValue[] | undefined) {
