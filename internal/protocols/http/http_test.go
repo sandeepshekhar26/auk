@@ -44,6 +44,54 @@ func TestRedirects_FollowedByDefault(t *testing.T) {
 	}
 }
 
+func TestTiming_PopulatesBreakdownAndNoChainForDirectRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New()
+	resp := execOnce(t, c, http.MethodGet, srv.URL)
+
+	if resp.Timing == nil {
+		t.Fatal("expected a non-nil Timing breakdown for a direct (non-redirected) request")
+	}
+	if resp.Timing.TotalMs < 0 {
+		t.Fatalf("expected a non-negative TotalMs, got %d", resp.Timing.TotalMs)
+	}
+	if resp.RedirectChain != nil {
+		t.Fatalf("expected no RedirectChain for a request with no redirects, got %+v", resp.RedirectChain)
+	}
+}
+
+func TestRedirects_PopulateChain(t *testing.T) {
+	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer final.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, final.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	c := New()
+	resp := execOnce(t, c, http.MethodGet, redirector.URL)
+
+	if len(resp.RedirectChain) != 2 {
+		t.Fatalf("expected a 2-hop redirect chain, got %d hops: %+v", len(resp.RedirectChain), resp.RedirectChain)
+	}
+	if resp.RedirectChain[0].URL != redirector.URL || resp.RedirectChain[0].Status != http.StatusFound {
+		t.Fatalf("expected first hop to be the redirector returning 302, got %+v", resp.RedirectChain[0])
+	}
+	if resp.RedirectChain[1].URL != final.URL || resp.RedirectChain[1].Status != http.StatusOK {
+		t.Fatalf("expected second hop to be the final destination returning 200, got %+v", resp.RedirectChain[1])
+	}
+	if resp.Timing == nil {
+		t.Fatal("expected Timing to reflect the FINAL hop even when redirects occurred")
+	}
+}
+
 func TestWithMaxRedirects_StopsAndErrors(t *testing.T) {
 	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

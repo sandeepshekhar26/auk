@@ -160,6 +160,35 @@ type ResponseData struct {
 	// AssertionResults holds the outcome of the request's declarative
 	// assertions against this response (empty when the request has none).
 	AssertionResults []AssertionResult `json:"assertionResults,omitempty"`
+	// Timing is the DNS/connect/TLS/TTFB breakdown for the FINAL hop (nil
+	// for protocols other than HTTP, which don't go through net/http's
+	// RoundTripper). A phase reading 0 means it was legitimately skipped
+	// (e.g. TLS on plain HTTP, DNS on a reused connection), not unmeasured.
+	Timing *TimingBreakdown `json:"timing,omitempty"`
+	// RedirectChain has one entry per hop actually sent, in order, when the
+	// request followed one or more redirects (empty otherwise) — lets the
+	// debugger show "GET /a -> 302 -> GET /b -> 200" instead of only the
+	// final response.
+	RedirectChain []RedirectHop `json:"redirectChain,omitempty"`
+}
+
+// TimingBreakdown is one hop's latency split into the phases net/http's
+// httptrace can observe.
+type TimingBreakdown struct {
+	DNSMs     int64 `json:"dnsMs"`
+	ConnectMs int64 `json:"connectMs"`
+	TLSMs     int64 `json:"tlsMs"`
+	TTFBMs    int64 `json:"ttfbMs"`
+	TotalMs   int64 `json:"totalMs"`
+}
+
+// RedirectHop records one leg of a redirect chain: the request that was
+// actually sent and the status it got back.
+type RedirectHop struct {
+	Method   string `json:"method"`
+	URL      string `json:"url"`
+	Status   int    `json:"status"`
+	TimingMs int64  `json:"timingMs"`
 }
 
 type HistoryEntry struct {

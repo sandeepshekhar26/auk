@@ -156,6 +156,28 @@ export interface ResponseData {
   timestamp: string
   error?: string
   assertionResults?: AssertionResult[]
+  // Per-phase breakdown for the FINAL hop (nil for non-HTTP protocols). A
+  // phase reading 0 was legitimately skipped (e.g. TLS on plain HTTP, DNS
+  // on a reused connection), not unmeasured.
+  timing?: TimingBreakdown | null
+  // One entry per hop actually sent, only present when the request
+  // followed one or more redirects.
+  redirectChain?: RedirectHop[] | null
+}
+
+export interface TimingBreakdown {
+  dnsMs: number
+  connectMs: number
+  tlsMs: number
+  ttfbMs: number
+  totalMs: number
+}
+
+export interface RedirectHop {
+  method: string
+  url: string
+  status: number
+  timingMs: number
 }
 
 export interface HistoryEntry {

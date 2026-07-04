@@ -7,7 +7,7 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { unifiedMergeView } from '@codemirror/merge'
 import { jsonHighlightStyle } from '../lib/codeTheme'
-import type { Assertion, AssertionResult, ResponseData } from '../types'
+import type { Assertion, AssertionResult, ResponseData, TimingBreakdown } from '../types'
 import { appState } from '../lib/store'
 
 function assertionLabel(a: Assertion): string {
@@ -17,7 +17,7 @@ function assertionLabel(a: Assertion): string {
   return a.value ? `${target} ${a.operator} ${a.value}` : `${target} ${a.operator}`
 }
 
-type Tab = 'body' | 'headers'
+type Tab = 'body' | 'headers' | 'timing'
 type BodyMode = 'pretty' | 'raw'
 
 function decodeBody(bodyBase64: string): string {
@@ -40,6 +40,27 @@ function tryPrettyJson(raw: string): { pretty: string | null; isJson: boolean } 
   } catch {
     return { pretty: null, isJson: false }
   }
+}
+
+// Splits a hop's cumulative httptrace timestamps into the non-overlapping
+// waterfall segments a request debugger shows (DNS -> connect -> TLS ->
+// waiting-on-server -> downloading), the same breakdown Chrome DevTools'
+// Network panel uses. ttfbMs/totalMs are measured from hop start, so
+// "waiting" and "content" are derived by subtraction — clamped to 0
+// because a reused connection (0 DNS/connect/TLS) can otherwise make the
+// subtraction go slightly negative from clock-resolution jitter.
+function timingPhases(t: TimingBreakdown) {
+  const waiting = Math.max(0, t.ttfbMs - t.dnsMs - t.connectMs - t.tlsMs)
+  const content = Math.max(0, t.totalMs - t.ttfbMs)
+  const raw = [
+    { label: 'DNS lookup', ms: t.dnsMs, colorClass: 'bg-info' },
+    { label: 'Connecting', ms: t.connectMs, colorClass: 'bg-keyword' },
+    { label: 'TLS handshake', ms: t.tlsMs, colorClass: 'bg-warn' },
+    { label: 'Waiting (TTFB)', ms: waiting, colorClass: 'bg-accent' },
+    { label: 'Content download', ms: content, colorClass: 'bg-ink-faint' },
+  ]
+  const total = Math.max(1, t.totalMs)
+  return raw.map((p) => ({ ...p, pct: (p.ms / total) * 100 }))
 }
 
 function buildCurl(req: { method: string; url: string; headers: { key: string; value: string; enabled: boolean }[] } | undefined): string {
@@ -244,6 +265,21 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                   Headers
                   <span class="ml-1 text-ink-faint">{res().headers.length}</span>
                 </button>
+                <Show when={res().timing}>
+                  <button
+                    class="rounded px-2 py-1 text-xs font-medium"
+                    classList={{
+                      'bg-raised text-ink': tab() === 'timing',
+                      'text-ink-muted hover:text-ink-dim': tab() !== 'timing',
+                    }}
+                    onClick={() => setTab('timing')}
+                  >
+                    Timing
+                    <Show when={(res().redirectChain?.length ?? 0) > 1}>
+                      <span class="ml-1 text-ink-faint">{res().redirectChain!.length} hops</span>
+                    </Show>
+                  </button>
+                </Show>
 
                 <Show when={tab() === 'body'}>
                   <div class="ml-auto flex items-center gap-1">
@@ -320,6 +356,79 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                     </table>
                   </Show>
                 </div>
+              </Show>
+
+              <Show when={tab() === 'timing' && res().timing}>
+                {(() => {
+                  const phases = createMemo(() => timingPhases(res().timing!))
+                  return (
+                    <div class="flex-1 overflow-auto p-3">
+                      <div class="flex h-3 overflow-hidden rounded-full bg-field">
+                        <For each={phases()}>
+                          {(p) => (
+                            <Show when={p.ms > 0}>
+                              <div
+                                class={p.colorClass}
+                                style={{ width: `${p.pct}%` }}
+                                title={`${p.label}: ${p.ms}ms`}
+                              />
+                            </Show>
+                          )}
+                        </For>
+                      </div>
+                      <table class="mt-3 w-full border-collapse text-xs">
+                        <tbody>
+                          <For each={phases()}>
+                            {(p) => (
+                              <tr class="border-b border-edge-soft">
+                                <td class="w-1/2 py-1.5 pr-3 align-top">
+                                  <span class={`mr-2 inline-block h-2 w-2 rounded-full ${p.colorClass}`} />
+                                  <span class="text-ink-dim">{p.label}</span>
+                                </td>
+                                <td class="py-1.5 text-right font-mono text-ink-muted">{p.ms}ms</td>
+                              </tr>
+                            )}
+                          </For>
+                          <tr>
+                            <td class="pt-2 font-semibold text-ink">
+                              {(res().redirectChain?.length ?? 0) > 1 ? 'Final hop total' : 'Total'}
+                            </td>
+                            <td class="pt-2 text-right font-mono font-semibold text-ink">{res().timing!.totalMs}ms</td>
+                          </tr>
+                        </tbody>
+                      </table>
+
+                      <Show when={(res().redirectChain?.length ?? 0) > 1}>
+                        <div class="mt-4">
+                          <h3 class="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Redirect chain
+                          </h3>
+                          <div class="mt-1 flex flex-col gap-1">
+                            <For each={res().redirectChain}>
+                              {(hop, i) => (
+                                <div class="flex items-center gap-2 font-mono text-[11px]">
+                                  <span class="text-ink-faint">{i() + 1}.</span>
+                                  <span class="text-ink-muted">{hop.method}</span>
+                                  <span class="flex-1 truncate text-ink-dim">{hop.url}</span>
+                                  <span
+                                    classList={{
+                                      'text-accent-fg': hop.status < 300,
+                                      'text-warn': hop.status >= 300 && hop.status < 400,
+                                      'text-danger': hop.status >= 400,
+                                    }}
+                                  >
+                                    {hop.status}
+                                  </span>
+                                  <span class="text-ink-faint">{hop.timingMs}ms</span>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                        </div>
+                      </Show>
+                    </div>
+                  )
+                })()}
               </Show>
             </div>
           )}
