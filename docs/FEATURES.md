@@ -136,8 +136,11 @@ AUK is a real macOS app (Wails v2), not just a browser tab:
 
 ## Full feature list
 
-**Protocols**: HTTP, WebSocket, SSE, GraphQL, gRPC (unary, fully dynamic —
-no precompiled stubs needed).
+**Protocols**: The desktop GUI is HTTP today. WebSocket, SSE, GraphQL, and
+gRPC (unary, fully dynamic — no precompiled stubs needed) are implemented in
+the underlying engine and runnable via the headless CLI; surfacing them in
+the GUI (a protocol picker plus each protocol's request/response UI) is the
+next tranche of work, not yet shipped.
 
 **Auth**: Basic, Bearer, API Key, JWT, OAuth2 (client credentials).
 
