@@ -161,7 +161,11 @@ func (c *Client) Execute(ctx context.Context, sess *core.Session, req model.Requ
 		sess.Sink.Emit(core.Event{SessionID: sess.ID, Kind: "http", Direction: "sent", Payload: []byte(resolved.Method + " " + fullURL)})
 	}
 
-	httpResp, err := c.http.Do(httpReq)
+	httpClient, err := c.clientFor(req.TLS)
+	if err != nil {
+		return model.ResponseData{Error: err.Error()}, err
+	}
+	httpResp, err := httpClient.Do(httpReq)
 	timing := time.Since(start).Milliseconds()
 	if err != nil {
 		return model.ResponseData{

@@ -67,7 +67,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [x] JWT auth
 - [x] AWS Signature v4 (2026-07-05) — verified against AWS's own published SigV4 test suite (7 test cases) plus a real signed request against httpbin.org
 - [ ] NTLM
-- [x] Client certificates (mTLS) — backend + tests existed already; request-level UI added 2026-07-05
+- [x] Client certificates (mTLS) — backend + tests existed already (internal/protocols/http/http_tls.go, `BuildTLSConfig`); request-level model field + UI + wiring added 2026-07-05 (verified: a real mTLS handshake test with the plain shared client + per-request override, plus round-tripped through the real GUI form -> YAML). Custom CA and skip-verify ship in the same form. Proxy support (`WithProxy`) has the identical shape of gap — tested at the backend, no model field/UI yet — left for a future pass, not done here.
 - [ ] 1Password integration (pull secrets) — needs the user's own 1Password CLI/account; not attempted without that decision
 - [ ] Custom auth via plugins (e.g. RFC 9421 HTTP Message Signatures) — blocked on the plugin runtime
 - [ ] Auth inheritance across workspace/folder/request levels

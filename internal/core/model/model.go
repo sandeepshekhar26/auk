@@ -154,7 +154,26 @@ type RequestDef struct {
 	// idempotency keys) on the SAME request that then passes through the
 	// normal chokepoint, never around it. Empty skips scripting entirely.
 	PreRequestScript string `yaml:"preRequestScript,omitempty" json:"preRequestScript,omitempty"`
-	OrderKey         string `yaml:"orderKey" json:"orderKey"`
+	// TLS carries optional per-request transport settings (client cert for
+	// mTLS, a custom CA, or skip-verify) — orthogonal to Auth, since a
+	// request can need a client certificate at the TLS layer independent of
+	// whatever Authorization scheme (or none) it also uses. Read directly by
+	// internal/protocols/http.Execute (not threaded through
+	// core.ResolvedRequest — Execute already receives this RequestDef
+	// alongside the resolved one).
+	TLS      *RequestTLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+	OrderKey string            `yaml:"orderKey" json:"orderKey"`
+}
+
+// RequestTLSConfig is PEM-encoded material, stored the same way other
+// per-request credentials are today (plaintext in the request's YAML file,
+// like BasicAuth.Password/BearerAuth.Token/AWSSigV4Auth.SecretAccessKey —
+// none of those are keychain-routed either; only Environment.Secrets are).
+type RequestTLSConfig struct {
+	ClientCertPEM      string `yaml:"clientCertPem,omitempty" json:"clientCertPem,omitempty"`
+	ClientKeyPEM       string `yaml:"clientKeyPem,omitempty" json:"clientKeyPem,omitempty"`
+	CustomCAPEM        string `yaml:"customCaPem,omitempty" json:"customCaPem,omitempty"`
+	InsecureSkipVerify bool   `yaml:"insecureSkipVerify,omitempty" json:"insecureSkipVerify,omitempty"`
 }
 
 type Environment struct {

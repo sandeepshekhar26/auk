@@ -1,4 +1,4 @@
-import { Show } from 'solid-js'
+import { Show, createSignal } from 'solid-js'
 import { appState, setAppState } from '../lib/store'
 import type { AuthKind } from '../types'
 
@@ -27,9 +27,19 @@ const inputClass =
 export default function AuthConfigForm(props: { requestIndex: number }) {
   const req = () => appState.requests[props.requestIndex]
   const auth = () => req()?.authRef ?? { kind: 'none' as AuthKind }
+  const tls = () => req()?.tls ?? {}
+  const [tlsOpen, setTlsOpen] = createSignal(false)
 
   function setKind(kind: AuthKind) {
     setAppState('requests', props.requestIndex, 'authRef', (prev) => ({ ...prev, kind }))
+  }
+
+  function setTLS(field: 'clientCertPem' | 'clientKeyPem' | 'customCaPem', value: string) {
+    setAppState('requests', props.requestIndex, 'tls', (prev) => ({ ...prev, [field]: value }))
+  }
+
+  function setInsecureSkipVerify(value: boolean) {
+    setAppState('requests', props.requestIndex, 'tls', (prev) => ({ ...prev, insecureSkipVerify: value }))
   }
 
   function setBasic(field: 'username' | 'password', value: string) {
@@ -267,6 +277,56 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
           <p class="text-[11px] text-ink-faint">Signs the request per AWS Signature Version 4 (Authorization + X-Amz-Date headers).</p>
         </div>
       </Show>
+
+      {/* Transport-level, not an Authorization scheme — a request can need a
+          client certificate independent of whatever auth type is selected
+          above (or none), so this section is always available regardless of
+          Auth type. Collapsed by default since most requests never need it. */}
+      <div class="mt-6 max-w-sm border-t border-edge pt-3">
+        <button
+          class="flex w-full items-center gap-1.5 text-left text-[10px] font-semibold uppercase tracking-wide text-ink-faint hover:text-ink-dim"
+          onClick={() => setTlsOpen((v) => !v)}
+        >
+          <span class="w-3 shrink-0">{tlsOpen() ? '▾' : '▸'}</span>
+          Client certificate (mTLS)
+        </button>
+        <Show when={tlsOpen()}>
+          <div class="mt-3 flex flex-col gap-2">
+            <Field label="Client certificate (PEM)">
+              <textarea
+                class={`${inputClass} h-20 resize-y`}
+                placeholder="-----BEGIN CERTIFICATE-----"
+                value={tls().clientCertPem ?? ''}
+                onInput={(e) => setTLS('clientCertPem', e.currentTarget.value)}
+              />
+            </Field>
+            <Field label="Client private key (PEM)">
+              <textarea
+                class={`${inputClass} h-20 resize-y`}
+                placeholder="-----BEGIN PRIVATE KEY-----"
+                value={tls().clientKeyPem ?? ''}
+                onInput={(e) => setTLS('clientKeyPem', e.currentTarget.value)}
+              />
+            </Field>
+            <Field label="Custom CA certificate (PEM, optional)">
+              <textarea
+                class={`${inputClass} h-16 resize-y`}
+                placeholder="For self-signed or internal servers"
+                value={tls().customCaPem ?? ''}
+                onInput={(e) => setTLS('customCaPem', e.currentTarget.value)}
+              />
+            </Field>
+            <label class="flex items-center gap-2 rounded border border-danger-edge bg-danger-bg/40 px-2 py-1.5">
+              <input
+                type="checkbox"
+                checked={tls().insecureSkipVerify ?? false}
+                onChange={(e) => setInsecureSkipVerify(e.currentTarget.checked)}
+              />
+              <span class="text-xs text-danger">Disable TLS certificate verification (insecure — testing only)</span>
+            </label>
+          </div>
+        </Show>
+      </div>
     </div>
   )
 }

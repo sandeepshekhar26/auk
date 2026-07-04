@@ -242,6 +242,84 @@ func TestBuildTLSConfig_BadCAPEM(t *testing.T) {
 	}
 }
 
+// TestExecute_PerRequestClientCert proves the actual wiring this feature
+// depends on: a *Client built with NO TLS options at all (New(), the plain
+// shared client every request normally uses) still successfully completes an
+// mTLS handshake when ONE request's model.RequestDef.TLS carries a client
+// cert — i.e. Execute's clientFor is what's doing the work, not something
+// baked in at client-construction time (that path is already covered by
+// TestMTLS_ClientCertRequired above, via WithTLSConfig).
+func TestExecute_PerRequestClientCert(t *testing.T) {
+	serverCert, _, _ := generateSelfSignedCert(t, "server")
+	_, clientCertPEM, clientKeyPEM := generateSelfSignedCert(t, "client")
+
+	clientCertPool := x509.NewCertPool()
+	if !clientCertPool.AppendCertsFromPEM(clientCertPEM) {
+		t.Fatal("failed to add client cert to pool")
+	}
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(r.TLS.PeerCertificates) == 0 {
+			t.Error("expected a peer certificate on the server side")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    clientCertPool,
+	}
+	srv.StartTLS()
+	defer srv.Close()
+
+	serverCertPEM := certToPEM(t, serverCert)
+
+	c := New() // no TLS options at construction — the plain shared client
+	resp, err := c.Execute(context.Background(), nil,
+		model.RequestDef{ID: "req-1", TLS: &model.RequestTLSConfig{
+			ClientCertPEM: string(clientCertPEM),
+			ClientKeyPEM:  string(clientKeyPEM),
+			CustomCAPEM:   string(serverCertPEM),
+		}},
+		core.ResolvedRequest{Method: http.MethodGet, URL: srv.URL},
+	)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if resp.Status != http.StatusOK {
+		t.Fatalf("expected 200 over per-request mTLS, got %d (err=%s)", resp.Status, resp.Error)
+	}
+}
+
+// TestExecute_RequestsWithoutTLSConfigUnaffected guards the fast path: a
+// request with req.TLS == nil (the overwhelming common case) must keep using
+// c.http directly, not silently build a one-off client every time (which
+// would, among other things, defeat cookie/connection reuse across the
+// workspace's other requests).
+func TestExecute_RequestsWithoutTLSConfigUnaffected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New()
+	client, err := c.clientFor(nil)
+	if err != nil {
+		t.Fatalf("clientFor(nil): %v", err)
+	}
+	if client != c.http {
+		t.Fatal("expected clientFor(nil) to return the shared client, got a different instance")
+	}
+
+	client2, err := c.clientFor(&model.RequestTLSConfig{})
+	if err != nil {
+		t.Fatalf("clientFor(empty config): %v", err)
+	}
+	if client2 != c.http {
+		t.Fatal("expected clientFor(all-zero-value config) to still return the shared client")
+	}
+}
+
 func TestWithProxy_RoutesThroughProxyServer(t *testing.T) {
 	var proxyHit bool
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

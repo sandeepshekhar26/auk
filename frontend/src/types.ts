@@ -38,7 +38,18 @@ export interface RequestDef {
   // {method,url,headers,body} to read, ctx.setHeader(name, value) to
   // add/override a header. Empty/absent skips scripting entirely.
   preRequestScript?: string
+  // Per-request transport settings (client cert for mTLS, custom CA, or skip
+  // verify) — orthogonal to authRef, since a request can need a client
+  // certificate at the TLS layer independent of its Authorization scheme.
+  tls?: RequestTLSConfig | null
   orderKey: string
+}
+
+export interface RequestTLSConfig {
+  clientCertPem?: string
+  clientKeyPem?: string
+  customCaPem?: string
+  insecureSkipVerify?: boolean
 }
 
 export type AssertionSource = 'status' | 'body' | 'header' | 'responseTime'
