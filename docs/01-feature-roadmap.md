@@ -4,7 +4,7 @@
 >
 > **Legend:** ★ = headline differentiator vs. Yaak/Postman/Insomnia/Bruno.
 >
-> **Status (2026-07-05):** checkboxes below reflect actual shipped state (this doc had never been updated as work landed — the `[ ]`s were stale, not accurate). Roughly: **v0.1 MVP is done**, **v0.5 is mostly done** (biggest gaps: OAuth1/NTLM/1Password auth, code-snippet gen beyond cURL, auto-update mechanics), **v1.0 is partial** (gRPC is unary-only — no streaming/`.proto` import; MCP Resources and full capability-grant UI are missing; no plugin runtime), **v2.0 is not started** (no Windows/Linux, no mock server, no HTTP/3, no cloud sync). See `api-tool-build-progress` session memory for the full shipped-feature list with dates.
+> **Status (2026-07-05):** checkboxes below reflect actual shipped state (this doc had never been updated as work landed — the `[ ]`s were stale, not accurate; a second pass the same day also found and corrected a few `[x]`s that had been marked done *before* the code actually existed — see the code-snippet and export-workspace lines below for what that looked like). Roughly: **v0.1 MVP is done**, **v0.5 is mostly done** (biggest gaps: OAuth1/NTLM/1Password auth, cookie-jar edit UI, custom proxy support, auto-update mechanics), **v1.0 is partial** (gRPC is unary-only — no streaming/`.proto` import; MCP Resources and full capability-grant UI are missing; no plugin runtime), **v2.0 is not started** (no Windows/Linux, no mock server, no HTTP/3, no cloud sync). See `api-tool-build-progress` session memory for the full shipped-feature list with dates.
 
 ---
 
