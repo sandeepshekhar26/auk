@@ -3,9 +3,10 @@ import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
 import { json } from '@codemirror/lang-json'
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { syntaxHighlighting } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { unifiedMergeView } from '@codemirror/merge'
+import { jsonHighlightStyle } from '../lib/codeTheme'
 import type { Assertion, AssertionResult, ResponseData } from '../types'
 import { appState } from '../lib/store'
 
@@ -63,7 +64,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   const [diffMode, setDiffMode] = createSignal(false)
   const [hasPrior, setHasPrior] = createSignal(false)
 
-  let editorHost: HTMLDivElement | undefined
+  const [editorHost, setEditorHost] = createSignal<HTMLDivElement>()
   let view: EditorView | undefined
   // The previous response body for the SAME request, captured the moment a new
   // response replaces it — powers "diff vs previous" without a backend archive
@@ -96,10 +97,11 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   const activeRequest = createMemo(() => appState.requests.find((r) => r.id === appState.activeTabId))
 
   createEffect(() => {
+    const host = editorHost()
     const text = displayText()
     const isJsonView = jsonInfo().isJson
     const showDiff = diffMode() && hasPrior()
-    if (!editorHost) return
+    if (!host) return
 
     if (view) {
       view.destroy()
@@ -116,7 +118,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
           keymap.of([...searchKeymap, ...defaultKeymap]),
           EditorView.editable.of(false),
           EditorState.readOnly.of(true),
-          syntaxHighlighting(defaultHighlightStyle),
+          syntaxHighlighting(jsonHighlightStyle),
           ...(isJsonView ? [json()] : []),
           // In diff mode, overlay a unified diff against the previous response
           // body for this request (green = added, red = removed).
@@ -130,7 +132,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
           }),
         ],
       }),
-      parent: editorHost,
+      parent: host,
     })
   })
 
@@ -294,11 +296,9 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
               </div>
 
               <div class="flex-1 overflow-hidden" classList={{ hidden: tab() !== 'body' }}>
-                <Show
-                  when={displayText().length > 0}
-                  fallback={<div class="p-3 text-sm text-ink-faint">Empty response body.</div>}
-                >
-                  <div ref={editorHost} class="h-full overflow-auto" />
+                <div ref={setEditorHost} class="h-full overflow-auto" classList={{ hidden: displayText().length === 0 }} />
+                <Show when={displayText().length === 0}>
+                  <div class="p-3 text-sm text-ink-faint">Empty response body.</div>
                 </Show>
               </div>
 

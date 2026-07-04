@@ -85,7 +85,7 @@ func (a *App) startup(ctx context.Context) {
 
 // seedDemoData gives a first-run user something real to look at and send.
 // It only runs when the file store has no workspaces yet (first launch, or
-// a fresh ~/.apitool/workspace), so a returning user's saved data is never
+// a fresh ~/.auk/workspace), so a returning user's saved data is never
 // clobbered.
 func (a *App) seedDemoData() {
 	if len(a.store.ListWorkspaces()) > 0 {
@@ -331,7 +331,7 @@ const defaultMCPPort = 8724
 // every launch or saved MCP client configs would break).
 func mcpTokenPath() string {
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".apitool", "mcp-token")
+		return filepath.Join(home, ".auk", "mcp-token")
 	}
 	return "mcp-token"
 }

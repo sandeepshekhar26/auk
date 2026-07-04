@@ -115,7 +115,7 @@ export default function SettingsModal() {
                   )}
                 </For>
               </div>
-              <p class="mt-2 text-xs text-ink-faint">Saved to ~/.apitool/settings.yaml</p>
+              <p class="mt-2 text-xs text-ink-faint">Saved to ~/.auk/settings.yaml</p>
             </section>
 
             <section>

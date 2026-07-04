@@ -8,12 +8,12 @@ import (
 	"apitool/internal/core/model"
 )
 
-// DefaultSettingsPath is ~/.apitool/settings.yaml — a sibling of
+// DefaultSettingsPath is ~/.auk/settings.yaml — a sibling of
 // history.jsonl, outside any git-synced workspace tree (app preferences
 // are per-machine, not shareable project data).
 func DefaultSettingsPath() string {
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".apitool", "settings.yaml")
+		return filepath.Join(home, ".auk", "settings.yaml")
 	}
 	return "settings.yaml"
 }

@@ -1,7 +1,7 @@
 // Theme controller. The actual colors live in src/index.css as CSS
 // variables keyed off <html data-theme="...">; this module just decides
 // which value that attribute gets and persists the preference via the Go
-// settings binding (~/.apitool/settings.yaml).
+// settings binding (~/.auk/settings.yaml).
 import { createSignal } from 'solid-js'
 import { wails } from './wails'
 import { models } from './wails'

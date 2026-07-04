@@ -33,6 +33,7 @@ export default {
         warn: token('warn'),
         'warn-edge': token('warn-edge'),
         info: token('info'),
+        keyword: token('keyword'),
       },
       fontFamily: {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],

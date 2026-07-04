@@ -12,7 +12,7 @@ import (
 
 // workspaceRoot returns the root directory for one workspace's git-synced
 // files: <rootDir>/workspaces/<id>/. rootDir itself is the app-wide storage
-// root (e.g. ~/.apitool), so multiple workspaces live side by side without
+// root (e.g. ~/.auk), so multiple workspaces live side by side without
 // colliding, while each workspace subtree is independently git-init'able.
 func workspaceRoot(rootDir string, workspaceID model.ID) string {
 	return filepath.Join(rootDir, "workspaces", workspaceID)

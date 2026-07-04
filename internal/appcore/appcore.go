@@ -23,12 +23,12 @@ import (
 	"apitool/internal/templating"
 )
 
-// DefaultWorkspaceDir is ~/.apitool/workspace — the single on-disk location
+// DefaultWorkspaceDir is ~/.auk/workspace — the single on-disk location
 // the GUI reads/writes and the CLI/MCP consumers read. Falls back to a
 // relative dir if the home directory can't be resolved.
 func DefaultWorkspaceDir() string {
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".apitool", "workspace")
+		return filepath.Join(home, ".auk", "workspace")
 	}
 	return "workspace"
 }

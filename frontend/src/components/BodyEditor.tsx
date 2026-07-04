@@ -3,6 +3,8 @@ import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { json } from '@codemirror/lang-json'
+import { syntaxHighlighting } from '@codemirror/language'
+import { jsonHighlightStyle } from '../lib/codeTheme'
 import { appState, setAppState } from '../lib/store'
 import type { BodyKind, KeyValue, RequestBody } from '../types'
 import KeyValueTable from './KeyValueTable'
@@ -45,6 +47,7 @@ function JsonCodeMirror(props: { requestIndex: number; bodyIndex: number; text: 
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           json(),
+          syntaxHighlighting(jsonHighlightStyle),
           editorTheme,
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return

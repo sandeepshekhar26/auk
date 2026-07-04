@@ -51,7 +51,7 @@ func WithSecretStore(s SecretStore) FileStoreOption {
 	return func(fs *FileStore) { fs.secrets = s }
 }
 
-// WithHistoryPath overrides the default ~/.apitool/history.jsonl location.
+// WithHistoryPath overrides the default ~/.auk/history.jsonl location.
 func WithHistoryPath(path string) FileStoreOption {
 	return func(fs *FileStore) { fs.historyPath = path }
 }
@@ -71,7 +71,7 @@ func NewFileStore(rootDir string, opts ...FileStoreOption) (*FileStore, error) {
 		lastResponses: make(map[model.ID]model.ResponseData),
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		fs.historyPath = filepath.Join(home, ".apitool", "history.jsonl")
+		fs.historyPath = filepath.Join(home, ".auk", "history.jsonl")
 	} else {
 		fs.historyPath = filepath.Join(rootDir, "history.jsonl")
 	}

@@ -3,7 +3,7 @@
 An [MCP](https://modelcontextprotocol.io) server that exposes your saved
 API requests to Claude Code (or any MCP client) as tools. It's a headless
 consumer of the same engine the GUI uses, reading the same git-friendly
-workspace files (`~/.apitool/workspace`) — so anything you save in the app,
+workspace files (`~/.auk/workspace`) — so anything you save in the app,
 Claude can list and run.
 
 ## Tools

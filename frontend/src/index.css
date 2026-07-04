@@ -44,6 +44,7 @@
   --color-warn: 251 191 36;
   --color-warn-edge: 120 53 15;
   --color-info: 56 189 248;
+  --color-keyword: 167 139 250; /* syntax highlighting: booleans, GraphQL keywords */
 }
 
 [data-theme='light'] {
@@ -75,6 +76,7 @@
   --color-warn: 217 119 6;
   --color-warn-edge: 253 230 138;
   --color-info: 2 132 199;
+  --color-keyword: 124 58 237;
 }
 
 html,
