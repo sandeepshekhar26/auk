@@ -4,12 +4,12 @@ import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { javascript } from '@codemirror/lang-javascript'
 import { syntaxHighlighting } from '@codemirror/language'
-import { jsonHighlightStyle } from '../lib/codeTheme'
+import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
 import { appState, setAppState } from '../lib/store'
 
 const editorTheme = EditorView.theme({
   '&': { height: '100%', fontSize: '12px', backgroundColor: 'transparent' },
-  '.cm-scroller': { fontFamily: '"JetBrains Mono", ui-monospace, monospace', overflow: 'auto' },
+  '.cm-scroller': { fontFamily: monoFontFamily, overflow: 'auto' },
   '.cm-content': { caretColor: 'rgb(var(--color-accent-fg))' },
   '.cm-gutters': { backgroundColor: 'transparent', color: 'rgb(var(--color-ink-faint))', border: 'none' },
   '&.cm-focused': { outline: 'none' },

@@ -14,6 +14,14 @@ import { tags as t } from '@lezer/highlight'
 
 const cssVar = (name: string) => `rgb(var(--color-${name}))`
 
+// Shared monospace stack for every CodeMirror instance's '.cm-scroller' —
+// centralized so the four call sites (BodyEditor, ScriptEditor,
+// ResponseViewer, McpToolView) can't drift out of sync the way two of
+// them already had (missing "JetBrains Mono" entirely, silently falling
+// back to the OS default monospace font despite the app bundling
+// JetBrains Mono via @fontsource specifically so it wouldn't).
+export const monoFontFamily = '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace'
+
 export const jsonHighlightStyle = HighlightStyle.define([
   { tag: t.propertyName, color: cssVar('info') },
   { tag: t.string, color: cssVar('accent-fg') },

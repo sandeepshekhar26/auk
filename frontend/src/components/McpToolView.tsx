@@ -4,7 +4,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { json } from '@codemirror/lang-json'
 import { syntaxHighlighting } from '@codemirror/language'
-import { jsonHighlightStyle } from '../lib/codeTheme'
+import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
 import { appState, mcpToolView } from '../lib/store'
 import { wails } from '../lib/wails'
 import SchemaForm, { canRenderForm, coerceNumberFields } from './SchemaForm'
@@ -12,7 +12,7 @@ import type { McpCallResult, McpToolInfo } from '../types'
 
 const editorTheme = EditorView.theme({
   '&': { backgroundColor: 'transparent', height: '100%', fontSize: '12px' },
-  '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, monospace', overflow: 'auto' },
+  '.cm-scroller': { fontFamily: monoFontFamily, overflow: 'auto' },
   '.cm-gutters': { backgroundColor: 'transparent', color: 'rgb(var(--color-ink-faint))', border: 'none' },
   '.cm-content': { caretColor: 'transparent' },
   '&.cm-focused': { outline: 'none' },

@@ -1,7 +1,0 @@
-id: e92b1fe0-e836-4b5b-b40e-b79c135e3fff
-workspaceId: e5e1edc7-8f9b-486b-a26d-dd3df4080751
-name: Local
-variables:
-    - key: baseUrl
-      value: https://httpbin.org
-      enabled: true

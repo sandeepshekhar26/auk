@@ -36,6 +36,14 @@ export default {
         keyword: token('keyword'),
       },
       fontFamily: {
+        // Inter/JetBrains Mono chosen deliberately — not the OS default —
+        // per the two most common picks among developer tools (Linear,
+        // Vercel, Raycast for Inter; every JetBrains IDE, plus most
+        // terminals/editors, for JetBrains Mono). Self-hosted via
+        // @fontsource (see main.tsx) so this isn't just a name reference
+        // that silently no-ops when the font isn't already installed —
+        // the actual files ship with the app.
+        sans: ['Inter', 'ui-sans-serif', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
     },

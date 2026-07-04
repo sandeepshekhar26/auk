@@ -6,7 +6,7 @@ import { json } from '@codemirror/lang-json'
 import { syntaxHighlighting } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { unifiedMergeView } from '@codemirror/merge'
-import { jsonHighlightStyle } from '../lib/codeTheme'
+import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
 import type { Assertion, AssertionResult, ResponseData, TimingBreakdown } from '../types'
 import { appState } from '../lib/store'
 
@@ -146,7 +146,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
           ...(showDiff ? [unifiedMergeView({ original: priorBody, mergeControls: false })] : []),
           EditorView.theme({
             '&': { backgroundColor: 'transparent', height: '100%', fontSize: '12px' },
-            '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, monospace', overflow: 'auto' },
+            '.cm-scroller': { fontFamily: monoFontFamily, overflow: 'auto' },
             '.cm-gutters': { backgroundColor: 'transparent', color: 'rgb(var(--color-ink-faint))', border: 'none' },
             '.cm-content': { caretColor: 'transparent' },
             '&.cm-focused': { outline: 'none' },
