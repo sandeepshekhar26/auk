@@ -10,6 +10,7 @@ const AUTH_KINDS: { value: AuthKind; label: string }[] = [
   { value: 'jwt', label: 'JWT' },
   { value: 'oauth2', label: 'OAuth 2.0' },
   { value: 'awsSigV4', label: 'AWS Signature v4' },
+  { value: 'oauth1', label: 'OAuth 1.0' },
 ]
 
 function Field(props: { label: string; children: any }) {
@@ -89,6 +90,16 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
       region: prev?.region ?? '',
       service: prev?.service ?? '',
       sessionToken: prev?.sessionToken ?? '',
+      [field]: value,
+    }))
+  }
+
+  function setOAuth1(field: 'consumerKey' | 'consumerSecret' | 'token' | 'tokenSecret', value: string) {
+    setAppState('requests', props.requestIndex, 'authRef', 'oauth1', (prev) => ({
+      consumerKey: prev?.consumerKey ?? '',
+      consumerSecret: prev?.consumerSecret ?? '',
+      token: prev?.token ?? '',
+      tokenSecret: prev?.tokenSecret ?? '',
       [field]: value,
     }))
   }
@@ -275,6 +286,43 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
             />
           </Field>
           <p class="text-[11px] text-ink-faint">Signs the request per AWS Signature Version 4 (Authorization + X-Amz-Date headers).</p>
+        </div>
+      </Show>
+
+      <Show when={auth().kind === 'oauth1'}>
+        <div class="mt-3 flex max-w-sm flex-col gap-2">
+          <Field label="Consumer Key">
+            <input
+              class={inputClass}
+              value={auth().oauth1?.consumerKey ?? ''}
+              onInput={(e) => setOAuth1('consumerKey', e.currentTarget.value)}
+            />
+          </Field>
+          <Field label="Consumer Secret">
+            <input
+              type="password"
+              class={inputClass}
+              value={auth().oauth1?.consumerSecret ?? ''}
+              onInput={(e) => setOAuth1('consumerSecret', e.currentTarget.value)}
+            />
+          </Field>
+          <Field label="Access Token (optional)">
+            <input
+              class={inputClass}
+              placeholder="Leave blank for a two-legged / consumer-only request"
+              value={auth().oauth1?.token ?? ''}
+              onInput={(e) => setOAuth1('token', e.currentTarget.value)}
+            />
+          </Field>
+          <Field label="Token Secret (optional)">
+            <input
+              type="password"
+              class={inputClass}
+              value={auth().oauth1?.tokenSecret ?? ''}
+              onInput={(e) => setOAuth1('tokenSecret', e.currentTarget.value)}
+            />
+          </Field>
+          <p class="text-[11px] text-ink-faint">HMAC-SHA1 signing per RFC 5849. PLAINTEXT and RSA-SHA1 aren't supported.</p>
         </div>
       </Show>
 

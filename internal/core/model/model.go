@@ -74,6 +74,7 @@ const (
 	AuthJWT      AuthKind = "jwt"
 	AuthOAuth2   AuthKind = "oauth2"
 	AuthAWSSigV4 AuthKind = "awsSigV4"
+	AuthOAuth1   AuthKind = "oauth1"
 )
 
 type AuthConfig struct {
@@ -84,6 +85,7 @@ type AuthConfig struct {
 	JWT      *JWTAuth      `yaml:"jwt,omitempty" json:"jwt,omitempty"`
 	OAuth2   *OAuth2Auth   `yaml:"oauth2,omitempty" json:"oauth2,omitempty"`
 	AWSSigV4 *AWSSigV4Auth `yaml:"awsSigV4,omitempty" json:"awsSigV4,omitempty"`
+	OAuth1   *OAuth1Auth   `yaml:"oauth1,omitempty" json:"oauth1,omitempty"`
 }
 
 type BasicAuth struct {
@@ -134,6 +136,17 @@ type AWSSigV4Auth struct {
 	Region          string `yaml:"region" json:"region"`
 	Service         string `yaml:"service" json:"service"`
 	SessionToken    string `yaml:"sessionToken,omitempty" json:"sessionToken,omitempty"`
+}
+
+// OAuth1Auth carries the four credentials RFC 5849 HMAC-SHA1 signing needs.
+// Token/TokenSecret are optional (a two-legged / consumer-only flow has no
+// access token yet — see internal/auth/auth_oauth1.go); PLAINTEXT/RSA-SHA1
+// signature methods aren't supported, only the common HMAC-SHA1 case.
+type OAuth1Auth struct {
+	ConsumerKey    string `yaml:"consumerKey" json:"consumerKey"`
+	ConsumerSecret string `yaml:"consumerSecret" json:"consumerSecret"`
+	Token          string `yaml:"token,omitempty" json:"token,omitempty"`
+	TokenSecret    string `yaml:"tokenSecret,omitempty" json:"tokenSecret,omitempty"`
 }
 
 type RequestDef struct {

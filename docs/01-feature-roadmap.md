@@ -62,7 +62,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [x] Basic Auth
 - [x] Bearer Token
 - [x] API Key (header or query param)
-- [ ] OAuth 1.0
+- [x] OAuth 1.0 (2026-07-05) — HMAC-SHA1 only (PLAINTEXT/RSA-SHA1 not implemented), per RFC 5849. Verified against an independent from-scratch Python reimplementation (stdlib hmac/hashlib only) rather than a memorized fixture, matching the SigV4 verification discipline; also verified live end-to-end through the real app against postman-echo.com.
 - [x] OAuth 2.0 (client-credentials grant only — no multi-grant/external-browser flow yet)
 - [x] JWT auth
 - [x] AWS Signature v4 (2026-07-05) — verified against AWS's own published SigV4 test suite (7 test cases) plus a real signed request against httpbin.org

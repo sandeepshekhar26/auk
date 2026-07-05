@@ -1,9 +1,13 @@
 // Package auth applies credentials to a resolved request. Basic, Bearer,
-// API Key, JWT (HMAC signing), OAuth2 (client-credentials grant only), and
-// AWS Signature Version 4 are implemented; NTLM and OAuth2 authorization-code
-// (with a system-browser redirect) are explicitly deferred per
-// docs/01-feature-roadmap.md — each is registered the same way once
-// implemented, so adding one never touches the engine.
+// API Key, JWT (HMAC signing), OAuth2 (client-credentials grant only), AWS
+// Signature Version 4, and OAuth 1.0 (HMAC-SHA1) are implemented; NTLM and
+// OAuth2 authorization-code (with a system-browser redirect) are explicitly
+// deferred per docs/01-feature-roadmap.md — NTLM in particular doesn't fit
+// this file's "compute once, attach a header" shape at all (it's a
+// challenge-response handshake needing the HTTP execute loop itself to
+// retry on a 401), so it isn't a case waiting to be filled in here the way
+// every other kind was. Each implemented kind is registered the same way,
+// so adding one never touches the engine.
 package auth
 
 import (
@@ -84,6 +88,11 @@ func (a *Applier) Apply(ctx context.Context, cfg model.AuthConfig, req core.Reso
 			return req, fmt.Errorf("aws sigv4 auth config missing")
 		}
 		return applyAWSSigV4(*cfg.AWSSigV4, req, time.Now())
+	case model.AuthOAuth1:
+		if cfg.OAuth1 == nil {
+			return req, fmt.Errorf("oauth1 auth config missing")
+		}
+		return applyOAuth1(*cfg.OAuth1, req, time.Now())
 	default:
 		return req, fmt.Errorf("auth kind %q not yet implemented", cfg.Kind)
 	}
