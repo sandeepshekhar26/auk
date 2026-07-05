@@ -3,10 +3,10 @@
 // appState, but nothing ever called ListWorkspaces/ListRequests/etc. to put
 // real data into it, so the app opened to a permanently empty shell with no
 // way to create anything either.
-import { appState, setAppState, openTab } from './store'
+import { appState, setAppState, openTab, setFolderRunView, setMcpToolView } from './store'
 import { models, wails } from './wails'
 import type { model as wailsModel } from '../../wailsjs/go/models'
-import type { Environment, Folder, McpConnection, RequestDef } from '../types'
+import type { Environment, Folder, FolderRunResult, McpConnection, RequestDef } from '../types'
 
 let saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let folderSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -96,6 +96,30 @@ export async function deleteMcpConnection(id: string): Promise<void> {
 export async function loadHistory(): Promise<void> {
   const history = await wails.ListHistory()
   setAppState('history', history ?? [])
+}
+
+// Bumped on every runFolder call so a stale in-flight run can tell it's been
+// superseded (the user closed the view, switched folders, or double-clicked
+// Run) and skip writing its late-arriving results over whatever's current.
+let runFolderGeneration = 0
+
+/**
+ * Sends every request in folderId (recursing into subfolders), sequentially,
+ * and puts the aggregate results in folderRunView for FolderRunView to
+ * render — the "batch send" entry point, mirroring how McpPanel's openTool
+ * takes over the same main-area real estate. Each RunRequest call also
+ * appends a real history entry on the backend, so history is reloaded
+ * afterward to pick those up.
+ */
+export async function runFolder(folderId: string, folderName: string): Promise<void> {
+  if (!appState.activeWorkspaceId) return
+  const generation = ++runFolderGeneration
+  setMcpToolView(null)
+  setFolderRunView({ folderId, folderName, running: true, results: [] })
+  const results = await wails.RunFolder(appState.activeWorkspaceId, folderId, appState.activeEnvironmentId ?? '')
+  if (generation !== runFolderGeneration) return
+  setFolderRunView({ folderId, folderName, running: false, results: (results ?? []) as unknown as FolderRunResult[] })
+  await loadHistory()
 }
 
 export async function loadAll(): Promise<void> {

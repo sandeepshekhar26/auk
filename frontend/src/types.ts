@@ -217,6 +217,12 @@ export interface HistoryEntry {
   timestamp: string
 }
 
+export interface FolderRunResult {
+  requestId: ID
+  requestName: string
+  response: ResponseData
+}
+
 export interface StreamEvent {
   sessionId: ID
   kind: 'ws' | 'sse' | 'grpc' | 'perf'

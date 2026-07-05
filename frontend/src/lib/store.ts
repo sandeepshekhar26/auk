@@ -1,6 +1,6 @@
 import { createStore } from 'solid-js/store'
 import { createSignal } from 'solid-js'
-import type { Environment, Folder, HistoryEntry, McpConnection, RequestDef, StreamEvent, Workspace } from '../types'
+import type { Environment, Folder, FolderRunResult, HistoryEntry, McpConnection, RequestDef, StreamEvent, Workspace } from '../types'
 
 export interface AppState {
   workspaces: Workspace[]
@@ -40,6 +40,18 @@ export interface McpToolViewTarget {
   toolName: string
 }
 export const [mcpToolView, setMcpToolView] = createSignal<McpToolViewTarget | null>(null)
+
+// A "Run folder" click takes over the SAME main-area real estate as
+// mcpToolView above (full width — an aggregate results list deserves more
+// room than the drawer), for the same reason and via the same
+// mutually-exclusive-with-activeTabId mechanism (openTab below clears this).
+export interface FolderRunViewTarget {
+  folderId: string
+  folderName: string
+  running: boolean
+  results: FolderRunResult[]
+}
+export const [folderRunView, setFolderRunView] = createSignal<FolderRunViewTarget | null>(null)
 
 export const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
 export const [sidebarFilter, setSidebarFilter] = createSignal('')
@@ -86,6 +98,7 @@ export function openTab(requestId: string) {
   setAppState('openTabIds', (ids) => (ids.includes(requestId) ? ids : [...ids, requestId]))
   setAppState('activeTabId', requestId)
   setMcpToolView(null)
+  setFolderRunView(null)
 }
 
 export function closeTab(requestId: string) {

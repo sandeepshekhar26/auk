@@ -1,6 +1,6 @@
 import { Index, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor } from 'solid-js'
 import { appState, setAppState, openTab, sidebarFilter, setSidebarFilter, explorerOpen, explorerTab, setExplorerTab, setExplorerOpen } from '../lib/store'
-import { createRequest, createFolder, saveFolderDebounced } from '../lib/data'
+import { createRequest, createFolder, runFolder, saveFolderDebounced } from '../lib/data'
 import type { Folder, KeyValue, RequestDef } from '../types'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HistoryPanel from './HistoryPanel'
@@ -155,6 +155,11 @@ export default function Sidebar() {
     setExplorerOpen(false)
   }
 
+  function startFolderRun(folder: Folder) {
+    void runFolder(folder.id, folder.name)
+    setExplorerOpen(false)
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape' && explorerOpen()) setExplorerOpen(false)
   }
@@ -207,6 +212,13 @@ export default function Sidebar() {
             onClick={() => toggleVarsEditor(folder().id)}
           >
             {folder().variables.length > 0 ? `{${folder().variables.length}}` : '{ }'}
+          </button>
+          <button
+            class="shrink-0 rounded px-1 text-xs text-ink-faint opacity-0 hover:bg-elevated hover:text-ink-dim group-hover:opacity-100"
+            title="Run every request in this folder"
+            onClick={() => startFolderRun(folder())}
+          >
+            ▶
           </button>
         </div>
         <Show when={varsOpen()}>

@@ -28,7 +28,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [x] gRPC (unary only — server reflection; **streaming and `.proto`-file import still missing**)
 - [x] WebSocket (bidirectional, interactive send/receive console)
 - [x] Server-Sent Events (SSE) streaming request type
-- [ ] Batch send (fire multiple requests at once)
+- [x] Batch send (2026-07-05) — scoped to "Run folder": a ▶ button on every folder row sequentially sends every request directly inside it (recursing into subfolders), showing an aggregate results list (status, name, timing, error) in the same main-area real estate McpToolView takes over. No general multi-select-across-the-tree UI exists (a real, separate gap); this delivers the "fire multiple requests at once" value without inventing a new selection-state model. Verified with a real 3-request folder (200/404/500) plus an unreachable-host request proving the batch continues past a failure, both as a Go test and live through the GUI.
 
 ### Environments & variable resolution
 - [x] Named environments (dev/staging/prod)

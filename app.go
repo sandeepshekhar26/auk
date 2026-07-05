@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -310,6 +311,61 @@ func (a *App) DeleteCookie(workspaceID, name string) {
 func (a *App) SendRequest(requestID string, environmentID string) (model.ResponseData, error) {
 	sessionID := uuid.NewString()
 	return a.engine.RunRequest(a.ctx, sessionID, requestID, environmentID, "gui", core.NoopSink{})
+}
+
+// RunFolder sequentially sends every request inside folderID — recursing
+// into subfolders — and returns each one's outcome in the same orderKey
+// order the sidebar tree shows them in. A thin loop over the exact same
+// engine.RunRequest SendRequest uses: no new engine-level primitive needed
+// since the per-request call was already clean, and a "run one folder"
+// scope (rather than an arbitrary multi-select across the whole tree) needs
+// no new selection-state model in the UI either. A failed request (network
+// error, non-2xx, whatever) is recorded in its own result rather than
+// aborting the rest of the batch, since the whole point is seeing every
+// outcome together.
+func (a *App) RunFolder(workspaceID, folderID, environmentID string) []model.FolderRunResult {
+	folders := a.store.ListFolders(workspaceID)
+	requests := a.store.ListRequests(workspaceID)
+
+	children := map[model.ID][]model.ID{}
+	for _, f := range folders {
+		if f.ParentID != nil {
+			children[*f.ParentID] = append(children[*f.ParentID], f.ID)
+		}
+	}
+
+	target := model.ID(folderID)
+	inScope := map[model.ID]bool{target: true}
+	queue := []model.ID{target}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		for _, childID := range children[id] {
+			if !inScope[childID] {
+				inScope[childID] = true
+				queue = append(queue, childID)
+			}
+		}
+	}
+
+	var scoped []model.RequestDef
+	for _, req := range requests {
+		if req.FolderID != nil && inScope[*req.FolderID] {
+			scoped = append(scoped, req)
+		}
+	}
+	sort.Slice(scoped, func(i, j int) bool { return scoped[i].OrderKey < scoped[j].OrderKey })
+
+	results := make([]model.FolderRunResult, 0, len(scoped))
+	for _, req := range scoped {
+		sessionID := uuid.NewString()
+		resp, err := a.engine.RunRequest(a.ctx, sessionID, req.ID, environmentID, "gui", core.NoopSink{})
+		if err != nil && resp.Error == "" {
+			resp.Error = err.Error()
+		}
+		results = append(results, model.FolderRunResult{RequestID: req.ID, RequestName: req.Name, Response: resp})
+	}
+	return results
 }
 
 // JSONPathFilter evaluates a dot/bracket path ("data.items[0].name") against

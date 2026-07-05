@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"apitool/internal/appcore"
 	"apitool/internal/core/model"
 	"apitool/internal/exporter"
 	"apitool/internal/storage"
@@ -118,5 +124,95 @@ func TestApp_ExportWorkspaceJSON_UnknownWorkspaceIsEmpty(t *testing.T) {
 	}
 	if len(doc.Folders) != 0 || len(doc.Requests) != 0 || len(doc.Environments) != 0 {
 		t.Fatalf("expected all-empty collections for an unknown workspace, got %+v", doc)
+	}
+}
+
+// TestApp_RunFolder exercises the real engine (appcore.NewEngine, not a
+// fake) against a real HTTP server returning mixed 200/404/500, proving:
+// requests directly in the target folder AND in a subfolder are included;
+// a sibling folder's request and a request with no folder at all are NOT;
+// results come back in orderKey order (matching what the sidebar tree
+// shows); and a request that can't even connect gets its own failed
+// result instead of aborting the requests queued after it.
+func TestApp_RunFolder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ok":
+			w.WriteHeader(http.StatusOK)
+		case "/missing":
+			w.WriteHeader(http.StatusNotFound)
+		case "/broken":
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	engine, store, err := appcore.NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	a := &App{ctx: context.Background(), store: store, engine: engine}
+
+	const wsID = "ws1"
+	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "test"}); err != nil {
+		t.Fatalf("PutWorkspace: %v", err)
+	}
+
+	parentID := uuid.NewString()
+	if err := store.PutFolder(model.Folder{ID: parentID, WorkspaceID: wsID, Name: "parent", OrderKey: "1"}); err != nil {
+		t.Fatalf("PutFolder(parent): %v", err)
+	}
+	childID := uuid.NewString()
+	if err := store.PutFolder(model.Folder{ID: childID, WorkspaceID: wsID, ParentID: &parentID, Name: "child", OrderKey: "2"}); err != nil {
+		t.Fatalf("PutFolder(child): %v", err)
+	}
+	otherID := uuid.NewString()
+	if err := store.PutFolder(model.Folder{ID: otherID, WorkspaceID: wsID, Name: "other", OrderKey: "3"}); err != nil {
+		t.Fatalf("PutFolder(other): %v", err)
+	}
+
+	reqs := []model.RequestDef{
+		{ID: uuid.NewString(), WorkspaceID: wsID, FolderID: &parentID, Name: "A-ok", Protocol: model.ProtocolHTTP, Method: "GET", URL: srv.URL + "/ok", OrderKey: "1"},
+		{ID: uuid.NewString(), WorkspaceID: wsID, FolderID: &childID, Name: "B-missing", Protocol: model.ProtocolHTTP, Method: "GET", URL: srv.URL + "/missing", OrderKey: "2"},
+		{ID: uuid.NewString(), WorkspaceID: wsID, FolderID: &childID, Name: "C-broken", Protocol: model.ProtocolHTTP, Method: "GET", URL: srv.URL + "/broken", OrderKey: "3"},
+		// Port 1 (TCPMUX) is never listening — dial fails immediately, so
+		// RunRequest returns a non-nil error rather than a real ResponseData.
+		{ID: uuid.NewString(), WorkspaceID: wsID, FolderID: &parentID, Name: "D-unreachable", Protocol: model.ProtocolHTTP, Method: "GET", URL: "http://127.0.0.1:1/nope", OrderKey: "4"},
+		{ID: uuid.NewString(), WorkspaceID: wsID, FolderID: &parentID, Name: "E-after-failure", Protocol: model.ProtocolHTTP, Method: "GET", URL: srv.URL + "/ok", OrderKey: "5"},
+		// Out of scope: a sibling folder, and no folder at all.
+		{ID: uuid.NewString(), WorkspaceID: wsID, FolderID: &otherID, Name: "sibling-folder", Protocol: model.ProtocolHTTP, Method: "GET", URL: srv.URL + "/ok", OrderKey: "0"},
+		{ID: uuid.NewString(), WorkspaceID: wsID, Name: "no-folder", Protocol: model.ProtocolHTTP, Method: "GET", URL: srv.URL + "/ok", OrderKey: "0"},
+	}
+	for _, r := range reqs {
+		if err := store.PutRequest(r); err != nil {
+			t.Fatalf("PutRequest(%s): %v", r.Name, err)
+		}
+	}
+
+	results := a.RunFolder(wsID, parentID, "")
+
+	if len(results) != 5 {
+		t.Fatalf("got %d results, want 5 (A, B, C, D, E only — not sibling-folder or no-folder): %+v", len(results), results)
+	}
+	wantOrder := []string{"A-ok", "B-missing", "C-broken", "D-unreachable", "E-after-failure"}
+	for i, name := range wantOrder {
+		if results[i].RequestName != name {
+			t.Fatalf("result[%d].RequestName = %q, want %q (orderKey order)", i, results[i].RequestName, name)
+		}
+	}
+	if got := results[0].Response.Status; got != http.StatusOK {
+		t.Fatalf("A-ok status = %d, want 200", got)
+	}
+	if got := results[1].Response.Status; got != http.StatusNotFound {
+		t.Fatalf("B-missing status = %d, want 404", got)
+	}
+	if got := results[2].Response.Status; got != http.StatusInternalServerError {
+		t.Fatalf("C-broken status = %d, want 500", got)
+	}
+	if results[3].Response.Error == "" {
+		t.Fatalf("D-unreachable: want a non-empty Error, got none (result: %+v)", results[3])
+	}
+	if got := results[4].Response.Status; got != http.StatusOK {
+		t.Fatalf("E-after-failure status = %d, want 200 (the batch must continue past D's failure)", got)
 	}
 }

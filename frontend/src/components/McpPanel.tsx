@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from 'solid-js'
 import { createStore } from 'solid-js/store'
-import { appState, setExplorerOpen, setMcpToolView } from '../lib/store'
+import { appState, setExplorerOpen, setFolderRunView, setMcpToolView } from '../lib/store'
 import { createMcpConnection, deleteMcpConnection } from '../lib/data'
 import { wails } from '../lib/wails'
 import type { McpConnection, McpToolInfo, McpTransportKind } from '../types'
@@ -49,6 +49,7 @@ function disconnect(id: string) {
 
 function openTool(connectionId: string, toolName: string) {
   setMcpToolView({ connectionId, toolName })
+  setFolderRunView(null)
   setExplorerOpen(false)
 }
 

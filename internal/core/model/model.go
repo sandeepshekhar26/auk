@@ -261,6 +261,16 @@ type ResponseData struct {
 	RedirectChain []RedirectHop `json:"redirectChain,omitempty"`
 }
 
+// FolderRunResult is one request's outcome from a batch "run folder" send —
+// snapshots RequestName alongside the full response (same convention as
+// HistoryEntry) so the aggregate results panel can render a readable list
+// without a separate requests lookup.
+type FolderRunResult struct {
+	RequestID   ID           `json:"requestId"`
+	RequestName string       `json:"requestName"`
+	Response    ResponseData `json:"response"`
+}
+
 // ReasonPhrase extracts just the reason phrase from Go's http.Response.Status,
 // which is the full status line ("200 OK", "404 Not Found"). StatusText is
 // meant to hold only the reason ("OK"), so callers that render code + reason
