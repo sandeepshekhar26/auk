@@ -226,9 +226,14 @@ export interface FolderRunResult {
 export interface StreamEvent {
   sessionId: ID
   kind: 'ws' | 'sse' | 'grpc' | 'perf'
-  direction: 'sent' | 'received' | 'meta'
+  direction: 'sent' | 'received' | 'meta' | 'error' | 'done'
   payload: string
   timestamp: string
+}
+
+export interface GrpcMethodInfo {
+  clientStreaming: boolean
+  serverStreaming: boolean
 }
 
 export type GitFileChangeStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked'

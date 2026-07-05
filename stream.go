@@ -114,6 +114,8 @@ func (a *App) StartStream(requestID string, environmentID string) (string, error
 		}
 	case model.ProtocolSSE:
 		a.startSSE(ctx, cancel, sessionID, req, resolved)
+	case model.ProtocolGRPC:
+		a.startGRPCStream(ctx, cancel, sessionID, req, resolved)
 	default:
 		cancel()
 		return "", fmt.Errorf("protocol %q is not a streaming protocol (use Send)", req.Protocol)
@@ -206,6 +208,47 @@ func (a *App) startSSE(ctx context.Context, cancel context.CancelFunc, sessionID
 			return
 		}
 		a.pushFrame(sess, "sse", "meta", []byte(fmt.Sprintf("stream ended (%d event(s))", resp.BodySize)))
+	}()
+}
+
+// startGRPCStream runs the engine's gRPC protocol handler in a goroutine for
+// a server-streaming method, feeding its core.Events into the session
+// buffer the same way startSSE does — Execute's server-streaming branch
+// (internal/protocols/grpc) blocks until the stream ends or ctx is
+// cancelled (StopStream), so it runs in its own goroutine and this binding
+// returns immediately. Calling this on a UNARY method also works (Execute
+// falls through to its unary path unchanged): it just emits one "sent" +
+// one "received" event before closing, rather than being rejected — the
+// frontend is expected to only route server-streaming methods here (see
+// RequestEditor.tsx's isStreamingProtocol / App.DescribeGrpcMethod), but
+// nothing breaks if it doesn't.
+func (a *App) startGRPCStream(ctx context.Context, cancel context.CancelFunc, sessionID string, req model.RequestDef, resolved core.ResolvedRequest) {
+	sess := &streamSession{id: sessionID, kind: "grpc", ctx: ctx, cancel: cancel}
+	a.streamMu.Lock()
+	a.streamSessions[sessionID] = sess
+	a.streamMu.Unlock()
+
+	proto, ok := a.engine.Protocols[model.ProtocolGRPC]
+	if !ok {
+		a.pushFrame(sess, "grpc", "meta", []byte("gRPC protocol not registered"))
+		a.markClosed(sess)
+		cancel()
+		return
+	}
+
+	a.pushFrame(sess, "grpc", "meta", []byte("connecting to "+resolved.URL))
+	coreSession := core.NewSession(sessionID, ctx, wailsStreamSink{app: a, sess: sess})
+	go func() {
+		defer func() {
+			a.markClosed(sess)
+			cancel()
+		}()
+		resp, err := proto.Execute(ctx, coreSession, req, resolved)
+		if err != nil {
+			a.pushFrame(sess, "grpc", "meta", []byte("closed: "+err.Error()))
+			return
+		}
+		a.pushFrame(sess, "grpc", "meta", []byte(fmt.Sprintf("stream ended (%d message(s))", resp.BodySize)))
 	}()
 }
 

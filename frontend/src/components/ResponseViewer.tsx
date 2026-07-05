@@ -492,7 +492,13 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
     <div class="flex h-full flex-col border-l border-edge">
       <Show when={!props.loading} fallback={<div class="p-3 text-sm text-ink-muted">Sending…</div>}>
         <Show when={props.response} fallback={<div class="p-3 text-sm text-ink-faint">Response will appear here.</div>}>
-          {(res) => (
+          {(res) => {
+            // gRPC's summary response (unary AND server-streaming) never
+            // sets Headers at all — Go's nil slice zero-value marshals to
+            // JSON null, not [] — so this can't be assumed non-null the way
+            // a real HTTP/GraphQL response's headers always are.
+            const headers = () => res().headers ?? []
+            return (
             <div class="flex h-full flex-col">
               <div class="flex items-center gap-3 border-b border-edge p-2 text-xs">
                 <span
@@ -536,6 +542,17 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                   </Show>
                 </div>
               </div>
+
+              {/* Surfaces resp.Error (a dial failure, a policy rejection, a
+                  not-yet-supported gRPC method, ...) — without this, a
+                  failed send showed only the bare "0 Error" status badge
+                  and "Empty response body", with the actual reason
+                  nowhere in the UI. Found while live-testing gRPC
+                  client-streaming rejection (2026-07-05); not specific to
+                  gRPC, so fixed here for every protocol at once. */}
+              <Show when={res().error}>
+                <div class="border-b border-danger-edge bg-danger-bg/40 px-3 py-2 text-xs text-danger">{res().error}</div>
+              </Show>
 
               <Show when={(res().assertionResults?.length ?? 0) > 0}>
                 {(() => {
@@ -591,7 +608,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                   onClick={() => setTab('headers')}
                 >
                   Headers
-                  <span class="ml-1 text-ink-faint">{res().headers.length}</span>
+                  <span class="ml-1 text-ink-faint">{headers().length}</span>
                 </button>
                 <Show when={res().timing}>
                   <button
@@ -708,12 +725,12 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
               <Show when={tab() === 'headers'}>
                 <div class="flex-1 overflow-auto p-2">
                   <Show
-                    when={res().headers.length > 0}
+                    when={headers().length > 0}
                     fallback={<div class="p-1 text-sm text-ink-faint">No headers.</div>}
                   >
                     <table class="w-full border-collapse text-xs">
                       <tbody>
-                        {res().headers.map((h) => (
+                        {headers().map((h) => (
                           <tr class="border-b border-edge-soft">
                             <td class="w-1/3 whitespace-nowrap py-1.5 pr-3 align-top font-mono text-ink-muted">{h.key}</td>
                             <td class="break-all py-1.5 font-mono text-ink-dim">{h.value}</td>
@@ -814,7 +831,7 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 })()}
               </Show>
             </div>
-          )}
+          )}}
         </Show>
       </Show>
     </div>

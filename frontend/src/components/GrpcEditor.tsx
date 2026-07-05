@@ -7,7 +7,7 @@ import type { KeyValue, RequestBody } from '../types'
 // method field (stored as that header) + a JSON message pane. Method discovery
 // happens server-side via reflection, so no .proto is needed here; a
 // reflection-powered method browser is a future enhancement.
-const METHOD_HEADER = 'x-grpc-method'
+export const METHOD_HEADER = 'x-grpc-method'
 
 export default function GrpcEditor(props: { requestIndex: number }) {
   const req = () => appState.requests[props.requestIndex]

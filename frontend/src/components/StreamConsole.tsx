@@ -15,12 +15,16 @@ const DIRECTION_STYLES: Record<StreamEvent['direction'], string> = {
   sent: 'text-info',
   received: 'text-accent-fg',
   meta: 'text-ink-muted',
+  error: 'text-danger',
+  done: 'text-ink-faint',
 }
 
 const DIRECTION_LABEL: Record<StreamEvent['direction'], string> = {
   sent: '↑ sent',
   received: '↓ recv',
   meta: '· meta',
+  error: '✗ error',
+  done: '✓ done',
 }
 
 export default function StreamConsole() {

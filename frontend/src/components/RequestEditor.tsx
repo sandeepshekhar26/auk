@@ -2,11 +2,12 @@ import { Show, Switch, Match, createEffect, createMemo, createSignal, For, on } 
 import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, activeStreams, pushStreamEvent } from '../lib/store'
 import { saveRequestDebounced } from '../lib/data'
 import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
+import { wails } from '../lib/wails'
 import type { KeyValue, ProtocolKind } from '../types'
 import KeyValueTable from './KeyValueTable'
 import BodyEditor from './BodyEditor'
 import GraphQLEditor from './GraphQLEditor'
-import GrpcEditor from './GrpcEditor'
+import GrpcEditor, { METHOD_HEADER } from './GrpcEditor'
 import AuthConfigForm from './AuthConfigForm'
 import AssertionEditor from './AssertionEditor'
 import PerfPanel from './PerfPanel'
@@ -27,9 +28,16 @@ const PROTOCOLS: { value: ProtocolKind; label: string }[] = [
 // dropdown is hidden for them.
 const usesHttpMethod = (p: ProtocolKind) => p === 'http' || p === 'graphql'
 
-// WebSocket and SSE stay open and stream frames, so their action is
-// Connect/Disconnect (via StartStream/StopStream) rather than a one-shot Send.
-const isStreamingProtocol = (p: ProtocolKind) => p === 'websocket' || p === 'sse'
+// WebSocket and SSE always stay open and stream frames, so their action is
+// Connect/Disconnect (via StartStream/StopStream) rather than a one-shot
+// Send. gRPC is mixed — most methods are unary and should stay a plain
+// Send/Response like HTTP, but a server-streaming method needs the SAME
+// live-session treatment. There's no reflection-based method picker yet
+// (GrpcEditor lets the target be typed freely), so isGrpcServerStreaming is
+// populated by a separate async check (see the effect below) rather than
+// being knowable synchronously from the protocol alone.
+const isStreamingProtocol = (p: ProtocolKind, isGrpcServerStreaming: boolean) =>
+  p === 'websocket' || p === 'sse' || (p === 'grpc' && isGrpcServerStreaming)
 
 const URL_PLACEHOLDER: Record<ProtocolKind, string> = {
   http: 'https://api.example.com/${path}',
@@ -58,6 +66,36 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
   const active = createMemo(() => appState.requests.find((r) => r.id === appState.activeTabId))
 
   const streaming = (requestId: string) => !!activeStreams()[requestId]
+
+  // Populated by DescribeGrpcMethod (a real reflection round trip) whenever
+  // the active request is gRPC and its URL or x-grpc-method header settles
+  // for 500ms — debounced so this doesn't dial the target on every
+  // keystroke. Keyed by request id so switching tabs doesn't show a stale
+  // verdict from whatever request was active before the check for THIS one
+  // resolves.
+  const [grpcServerStreamingByRequest, setGrpcServerStreamingByRequest] = createSignal<Record<string, boolean>>({})
+  const isGrpcServerStreaming = (requestId: string) => grpcServerStreamingByRequest()[requestId] === true
+
+  let grpcCheckTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    const req = active()
+    if (!req || req.protocol !== 'grpc') return
+    const requestId = req.id
+    const methodHeaderValue = req.headers?.find((h) => h.key.toLowerCase() === METHOD_HEADER)?.value ?? ''
+    // Reading both here (not just inside the timeout below) is what makes
+    // Solid's tracking re-run this effect when either changes.
+    const url = req.url
+    void url
+    void methodHeaderValue
+
+    if (grpcCheckTimer) clearTimeout(grpcCheckTimer)
+    grpcCheckTimer = setTimeout(() => {
+      wails
+        .DescribeGrpcMethod(requestId, appState.activeEnvironmentId ?? '')
+        .then((info) => setGrpcServerStreamingByRequest((prev) => ({ ...prev, [requestId]: !!info?.serverStreaming })))
+        .catch(() => setGrpcServerStreamingByRequest((prev) => ({ ...prev, [requestId]: false })))
+    }, 500)
+  })
 
   function connect(requestId: string) {
     setStreamConsoleOpen(true)
@@ -171,7 +209,7 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
               onInput={(e) => setAppState('requests', activeIndex(), 'url', e.currentTarget.value)}
             />
             <Show
-              when={isStreamingProtocol(req().protocol || 'http')}
+              when={isStreamingProtocol(req().protocol || 'http', isGrpcServerStreaming(req().id))}
               fallback={
                 <button
                   class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"

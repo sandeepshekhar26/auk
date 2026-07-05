@@ -271,6 +271,16 @@ type FolderRunResult struct {
 	Response    ResponseData `json:"response"`
 }
 
+// GrpcMethodInfo reports a gRPC method's streaming shape, discovered via
+// reflection (internal/protocols/grpc.Client.DescribeMethod) without
+// invoking it. The GUI checks this before deciding whether "Send" should
+// start a live-stream session or a normal one-shot send, since GrpcEditor
+// lets the target method be typed freely (no reflection-based picker yet).
+type GrpcMethodInfo struct {
+	ClientStreaming bool `json:"clientStreaming"`
+	ServerStreaming bool `json:"serverStreaming"`
+}
+
 // ReasonPhrase extracts just the reason phrase from Go's http.Response.Status,
 // which is the full status line ("200 OK", "404 Not Found"). StatusText is
 // meant to hold only the reason ("OK"), so callers that render code + reason

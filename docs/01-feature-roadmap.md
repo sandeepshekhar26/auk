@@ -25,7 +25,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 ### Request types (protocols)
 - [x] HTTP / REST (redirects, custom methods)
 - [x] GraphQL (query editor, variables, schema explorer via introspection (2026-07-05); **typed autocomplete-while-typing in the query editor still missing** — see below)
-- [x] gRPC (unary only — server reflection; **streaming and `.proto`-file import still missing**)
+- [x] gRPC (unary + server-streaming (2026-07-05) — server reflection; **client-streaming, bidi, and `.proto`-file import still missing**, rejected with a specific "client-streaming/bidi gRPC isn't supported yet" message rather than a silent hang). Live-testing this surfaced and fixed two real, pre-existing bugs affecting every protocol, not just gRPC: (1) the response viewer read `headers.length`/`.map()` without a null check, so any response with no headers at all (gRPC's summary response never sets any) crashed the render silently — Send got stuck on "Sending…" forever with no visible error; (2) `ResponseData.Error` was never actually rendered anywhere — a failed send showed only a bare "0 Error" badge with no reason. Both fixed.
 - [x] WebSocket (bidirectional, interactive send/receive console)
 - [x] Server-Sent Events (SSE) streaming request type
 - [x] Batch send (2026-07-05) — scoped to "Run folder": a ▶ button on every folder row sequentially sends every request directly inside it (recursing into subfolders), showing an aggregate results list (status, name, timing, error) in the same main-area real estate McpToolView takes over. No general multi-select-across-the-tree UI exists (a real, separate gap); this delivers the "fire multiple requests at once" value without inventing a new selection-state model. Verified with a real 3-request folder (200/404/500) plus an unreachable-host request proving the batch continues past a failure, both as a Go test and live through the GUI.
@@ -87,7 +87,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [ ] Rich previews (HTML, images, binary)
 - [x] Dedicated response headers tab
 - [x] Timeline / debug tab (redirects, cookies, payload, headers, timing)
-- [x] Streaming responses (SSE / WebSocket live view; gRPC is unary-only, nothing to stream yet)
+- [x] Streaming responses (SSE / WebSocket live view; gRPC server-streaming (2026-07-05) reuses the same live StreamConsole — Connect/Disconnect shown only when `DescribeGrpcMethod` (a real reflection call) reports the target method is server-streaming, so unary gRPC keeps its plain Send/Response)
 - [x] Code-snippet generation from a request — cURL, Python `requests`, JS `fetch`, Go `net/http` (2026-07-05; a "Copy as" dropdown, gated to HTTP/GraphQL requests). Basic/Bearer/API-key auth are reproduced in the generated headers; JWT/OAuth2/AWS SigV4 add an explanatory comment instead of a fake header, since those need a live signing/token step this is a copy-paste convenience, not a request runner. Not attempting Go/JS/Python's own SDK-specific idioms beyond the stdlib-equivalent client (`requests`/`fetch`/`net/http`) — no retries, connection pooling config, etc.
 
 ### History, cookies & debugging
@@ -285,7 +285,7 @@ Goal: full protocol coverage, the MCP differentiator, and competitive polish.
 
 | Area | Scope |
 |------|-------|
-| Protocols ★ | gRPC full (reflection via `jhump/protoreflect/grpcreflect` + `.proto` via `bufbuild/protocompile`; `dynamicpb`/`grpcdynamic` dynamic messages; unary/server/client/bidi over `google.golang.org/grpc`); batch send |
+| Protocols ★ | gRPC full — reflection + unary + **server-streaming shipped 2026-07-05**; remaining: `.proto` via `bufbuild/protocompile` (no reflection-only path exists for servers that don't expose it), client-streaming + bidi over `google.golang.org/grpc`. **Batch send shipped 2026-07-05** — scoped to "Run folder" (sequential, no general multi-select) |
 | MCP server ★ | Embedded Streamable-HTTP server (`modelcontextprotocol/go-sdk`) as a goroutine + stdio bridge; full tool surface (read/execute/authoring); bearer token (`auth.RequireBearerToken`) + loopback bind; capability grants; policy engine at dispatch chokepoint + approval modal + audit log; structured results/outputSchema; "Connect to Claude Code" button |
 | k6 perf ★ | Run history (git-friendly) + SQLite index; baseline/regression tracking + trend sparklines; AGPLv3 third-party-licenses screen + durable Corresponding Source |
 | Response diff ★ | Two-response / history / cross-env diffing + environment-comparison runs |

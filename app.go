@@ -27,6 +27,7 @@ import (
 	"apitool/internal/onepassword"
 	"apitool/internal/perf"
 	graphqlprotocol "apitool/internal/protocols/graphql"
+	grpcprotocol "apitool/internal/protocols/grpc"
 	"apitool/internal/storage"
 )
 
@@ -389,6 +390,30 @@ func (a *App) FetchGraphQLSchema(requestID, environmentID string) (string, error
 		return "", err
 	}
 	return string(raw), nil
+}
+
+// DescribeGrpcMethod resolves requestID's URL/headers (same template+auth
+// path as SendRequest) and asks the target's reflection service whether the
+// configured method is server-streaming, client-streaming, both (bidi), or
+// unary — without invoking it. RequestEditor.tsx calls this before deciding
+// whether "Send" should start a live-stream session (StartStream) or a
+// normal one-shot send, since GrpcEditor lets the method be typed freely
+// (no reflection-based picker yet) and there's no other way to know its
+// shape ahead of time.
+func (a *App) DescribeGrpcMethod(requestID, environmentID string) (model.GrpcMethodInfo, error) {
+	_, resolved, err := a.engine.ResolveForExecution(a.ctx, requestID, environmentID, "gui")
+	if err != nil {
+		return model.GrpcMethodInfo{}, err
+	}
+	proto, ok := a.engine.Protocols[model.ProtocolGRPC].(*grpcprotocol.Client)
+	if !ok {
+		return model.GrpcMethodInfo{}, fmt.Errorf("grpc protocol not registered")
+	}
+	clientStreaming, serverStreaming, err := proto.DescribeMethod(a.ctx, resolved)
+	if err != nil {
+		return model.GrpcMethodInfo{}, err
+	}
+	return model.GrpcMethodInfo{ClientStreaming: clientStreaming, ServerStreaming: serverStreaming}, nil
 }
 
 // JSONPathFilter evaluates a dot/bracket path ("data.items[0].name") against
