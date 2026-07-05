@@ -30,6 +30,7 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
   const auth = () => req()?.authRef ?? { kind: 'none' as AuthKind }
   const tls = () => req()?.tls ?? {}
   const [tlsOpen, setTlsOpen] = createSignal(false)
+  const [proxyOpen, setProxyOpen] = createSignal(false)
 
   function setKind(kind: AuthKind) {
     setAppState('requests', props.requestIndex, 'authRef', (prev) => ({ ...prev, kind }))
@@ -37,6 +38,10 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
 
   function setTLS(field: 'clientCertPem' | 'clientKeyPem' | 'customCaPem', value: string) {
     setAppState('requests', props.requestIndex, 'tls', (prev) => ({ ...prev, [field]: value }))
+  }
+
+  function setProxyUrl(value: string) {
+    setAppState('requests', props.requestIndex, 'proxyUrl', value)
   }
 
   function setInsecureSkipVerify(value: boolean) {
@@ -372,6 +377,34 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
               />
               <span class="text-xs text-danger">Disable TLS certificate verification (insecure — testing only)</span>
             </label>
+          </div>
+        </Show>
+      </div>
+
+      {/* Also transport-level and orthogonal to Auth type, same reasoning as
+          mTLS above — a manual proxy is independent of whatever auth (or
+          none) is selected. System/environment proxy settings apply by
+          default regardless; this is only for an explicit per-request
+          override. */}
+      <div class="mt-3 max-w-sm border-t border-edge pt-3">
+        <button
+          class="flex w-full items-center gap-1.5 text-left text-[10px] font-semibold uppercase tracking-wide text-ink-faint hover:text-ink-dim"
+          onClick={() => setProxyOpen((v) => !v)}
+        >
+          <span class="w-3 shrink-0">{proxyOpen() ? '▾' : '▸'}</span>
+          Proxy
+        </button>
+        <Show when={proxyOpen()}>
+          <div class="mt-3 flex flex-col gap-2">
+            <Field label="Proxy URL">
+              <input
+                class={inputClass}
+                placeholder="http://user:pass@proxyhost:8080"
+                value={req()?.proxyUrl ?? ''}
+                onInput={(e) => setProxyUrl(e.currentTarget.value)}
+              />
+            </Field>
+            <p class="text-[11px] text-ink-faint">Routes this request through a manual HTTP/HTTPS proxy. Leave blank to use the system/environment proxy (if any).</p>
           </div>
         </Show>
       </div>

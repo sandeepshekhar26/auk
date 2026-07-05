@@ -161,7 +161,11 @@ func (c *Client) Execute(ctx context.Context, sess *core.Session, req model.Requ
 		sess.Sink.Emit(core.Event{SessionID: sess.ID, Kind: "http", Direction: "sent", Payload: []byte(resolved.Method + " " + fullURL)})
 	}
 
-	httpClient, err := c.clientFor(req.TLS)
+	var proxyURL string
+	if req.ProxyURL != nil {
+		proxyURL = *req.ProxyURL
+	}
+	httpClient, err := c.clientFor(req.TLS, proxyURL)
 	if err != nil {
 		return model.ResponseData{Error: err.Error()}, err
 	}

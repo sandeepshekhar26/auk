@@ -303,20 +303,20 @@ func TestExecute_RequestsWithoutTLSConfigUnaffected(t *testing.T) {
 	defer srv.Close()
 
 	c := New()
-	client, err := c.clientFor(nil)
+	client, err := c.clientFor(nil, "")
 	if err != nil {
-		t.Fatalf("clientFor(nil): %v", err)
+		t.Fatalf("clientFor(nil, \"\"): %v", err)
 	}
 	if client != c.http {
-		t.Fatal("expected clientFor(nil) to return the shared client, got a different instance")
+		t.Fatal("expected clientFor(nil, \"\") to return the shared client, got a different instance")
 	}
 
-	client2, err := c.clientFor(&model.RequestTLSConfig{})
+	client2, err := c.clientFor(&model.RequestTLSConfig{}, "")
 	if err != nil {
-		t.Fatalf("clientFor(empty config): %v", err)
+		t.Fatalf("clientFor(empty config, \"\"): %v", err)
 	}
 	if client2 != c.http {
-		t.Fatal("expected clientFor(all-zero-value config) to still return the shared client")
+		t.Fatal("expected clientFor(all-zero-value config, \"\") to still return the shared client")
 	}
 }
 
@@ -338,5 +338,35 @@ func TestWithProxy_RoutesThroughProxyServer(t *testing.T) {
 	}
 	if resp.Status != http.StatusOK {
 		t.Fatalf("expected 200 via proxy, got %d (err=%s)", resp.Status, resp.Error)
+	}
+}
+
+// TestExecute_PerRequestProxy proves the same "no options baked in at
+// construction time" wiring TestExecute_PerRequestClientCert proves for
+// mTLS, but for RequestDef.ProxyURL: a *Client built with New() (no proxy
+// option at all) still routes through the proxy when ONE request's
+// RequestDef carries a ProxyURL.
+func TestExecute_PerRequestProxy(t *testing.T) {
+	var proxyHit bool
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxy.Close()
+
+	c := New() // no proxy option at construction — the plain shared client
+	proxyURL := proxy.URL
+	resp, err := c.Execute(context.Background(), nil,
+		model.RequestDef{ID: "req-1", ProxyURL: &proxyURL},
+		core.ResolvedRequest{Method: http.MethodGet, URL: "http://example.invalid/some/path"},
+	)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !proxyHit {
+		t.Fatal("expected the request to be routed through the per-request proxy")
+	}
+	if resp.Status != http.StatusOK {
+		t.Fatalf("expected 200 via per-request proxy, got %d (err=%s)", resp.Status, resp.Error)
 	}
 }

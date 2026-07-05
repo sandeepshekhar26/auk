@@ -96,28 +96,36 @@ func WithMaxRedirects(n int) Option {
 }
 
 // clientFor returns the Client's normal shared *http.Client (the fast path —
-// every request without per-request TLS settings, which is nearly all of
-// them, keeps using the one long-lived client and its cookie jar), or, when
-// cfg specifies a client cert / custom CA / skip-verify, a fresh one-off
-// *http.Client built just for this call via New(WithTLSConfig(...)).
+// every request without per-request TLS/proxy settings, which is nearly all
+// of them, keeps using the one long-lived client and its cookie jar), or,
+// when tlsCfg specifies a client cert / custom CA / skip-verify and/or
+// proxyURL is set, a fresh one-off *http.Client built just for this call.
 //
 // A one-off client is necessary rather than mutating c.http in place because
 // c.http is shared across every request the app sends for the lifetime of
 // the process (see New's doc comment) — different requests can need
-// different (or no) client certificates, so TLS config can't be a
+// different (or no) client certificates or proxies, so neither can be a
 // process-wide setting the way the cookie jar currently is. The one-off
 // client still shares c.http's cookie jar, so switching a single request to
-// a custom cert doesn't fragment its cookie continuity with the rest of the
-// workspace.
-func (c *Client) clientFor(cfg *model.RequestTLSConfig) (*http.Client, error) {
-	if cfg == nil || (cfg.ClientCertPEM == "" && cfg.ClientKeyPEM == "" && cfg.CustomCAPEM == "" && !cfg.InsecureSkipVerify) {
+// a custom cert/proxy doesn't fragment its cookie continuity with the rest
+// of the workspace.
+func (c *Client) clientFor(tlsCfg *model.RequestTLSConfig, proxyURL string) (*http.Client, error) {
+	hasTLS := tlsCfg != nil && (tlsCfg.ClientCertPEM != "" || tlsCfg.ClientKeyPEM != "" || tlsCfg.CustomCAPEM != "" || tlsCfg.InsecureSkipVerify)
+	if !hasTLS && proxyURL == "" {
 		return c.http, nil
 	}
-	tlsCfg, err := BuildTLSConfig([]byte(cfg.CustomCAPEM), []byte(cfg.ClientCertPEM), []byte(cfg.ClientKeyPEM), cfg.InsecureSkipVerify)
-	if err != nil {
-		return nil, err
+	opts := []Option{WithCookieJar(c.http.Jar)}
+	if hasTLS {
+		built, err := BuildTLSConfig([]byte(tlsCfg.CustomCAPEM), []byte(tlsCfg.ClientCertPEM), []byte(tlsCfg.ClientKeyPEM), tlsCfg.InsecureSkipVerify)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, WithTLSConfig(built))
 	}
-	return New(WithTLSConfig(tlsCfg), WithCookieJar(c.http.Jar)).http, nil
+	if proxyURL != "" {
+		opts = append(opts, WithProxy(proxyURL))
+	}
+	return New(opts...).http, nil
 }
 
 // transportOf returns the client's *http.Transport, creating one from a

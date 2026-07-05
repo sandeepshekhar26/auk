@@ -46,6 +46,10 @@ export interface RequestDef {
   // verify) — orthogonal to authRef, since a request can need a client
   // certificate at the TLS layer independent of its Authorization scheme.
   tls?: RequestTLSConfig | null
+  // Routes this request through a manual proxy (e.g. "http://host:8080"),
+  // independent of tls/authRef for the same reason those are independent
+  // of each other.
+  proxyUrl?: string | null
   orderKey: string
 }
 

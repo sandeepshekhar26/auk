@@ -93,7 +93,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 ### History, cookies & debugging
 - [x] Per-request response history
 - [ ] Cookie jar per workspace with manual cookie editing (an internal per-send `net/http/cookiejar` exists; no persistent workspace jar or edit UI)
-- [ ] Custom proxy support
+- [x] Custom proxy support (2026-07-05) — `WithProxy` already existed and was tested at the backend (`internal/protocols/http`); this pass added `RequestDef.ProxyURL` + a collapsed-by-default UI section next to mTLS, and extended `clientFor` to build a one-off client when either a client cert or a proxy (or both) is set for one request. Verified live against a real local forward-proxy process, not just the existing unit test.
 - [x] Redirect warnings (cross-origin / insecure downgrade flagged in the redirect chain) (2026-07-05)
 
 ### Import / export

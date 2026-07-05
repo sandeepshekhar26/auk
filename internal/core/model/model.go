@@ -180,8 +180,14 @@ type RequestDef struct {
 	// internal/protocols/http.Execute (not threaded through
 	// core.ResolvedRequest — Execute already receives this RequestDef
 	// alongside the resolved one).
-	TLS      *RequestTLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
-	OrderKey string            `yaml:"orderKey" json:"orderKey"`
+	TLS *RequestTLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+	// ProxyURL routes this request through a manual HTTP/HTTPS proxy (e.g.
+	// "http://user:pass@proxyhost:8080") — independent of TLS/mTLS, same
+	// reasoning as TLS being independent of Auth. Empty/nil means no
+	// per-request override (Go's default http.ProxyFromEnvironment still
+	// applies via internal/protocols/http's shared client).
+	ProxyURL *string `yaml:"proxyUrl,omitempty" json:"proxyUrl,omitempty"`
+	OrderKey string  `yaml:"orderKey" json:"orderKey"`
 }
 
 // RequestTLSConfig is PEM-encoded material, stored the same way other
