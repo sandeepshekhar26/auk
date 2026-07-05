@@ -109,7 +109,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [x] Works with Dropbox / any file-based sync (plain YAML) — true by construction, no code needed
 
 ### UX, themes & keyboard
-- [x] Command palette + autocomplete everywhere *(command palette + fuzzy nav yes; "autocomplete everywhere" in every text field is not built)* + fully customizable hotkeys *(shortcuts are fixed today, not user-rebindable)*
+- [x] Command palette + autocomplete everywhere *(command palette + fuzzy nav yes; "autocomplete everywhere" in every text field is not built)* + fully customizable hotkeys *(shortcuts are fixed today, not user-rebindable)*. Shortcut coverage widened 2026-07-05: ⌘W (close tab), ⌘⇧]/⌘⇧[ (next/previous tab), and a real global ⌘F (the response-body Search button had claimed this shortcut in its own label since it was built, but nothing actually dispatched it outside whatever had keyboard focus — it only worked by chance). Also replaced native `title` tooltips on the icon-only left rail with a fast custom `Tooltip` component (~350ms, on-brand styling) — the native ones technically worked in the packaged app's WKWebView but the ~1.2-1.5s OS delay made the icon rail feel undiscoverable. Still not "full" coverage (no tab-reorder, no per-panel shortcuts beyond what's listed in ⌘/) and still not user-rebindable.
 - [x] Built-in + community themes; build-your-own themes — System/Light/Dark shipped; the CSS-variable token system makes a new theme data-only, but no theme picker/import UI for custom ones yet
 - [ ] Adjustable panes / sidebar customization
 - [x] One-click send ("Run") affordance

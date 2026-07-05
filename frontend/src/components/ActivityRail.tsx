@@ -10,6 +10,7 @@ import {
   setSettingsOpen,
 } from '../lib/store'
 import { createRequest } from '../lib/data'
+import Tooltip from './Tooltip'
 
 // ActivityRail is the entire "always visible" chrome on the left: a slim
 // 48px icon strip, not a docked 260px tree. Everything the tree/history used
@@ -21,6 +22,7 @@ export default function ActivityRail() {
     const ws = appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)
     return (ws?.name ?? '?').trim().slice(0, 1).toUpperCase()
   })
+  const workspaceName = createMemo(() => appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)?.name ?? 'Workspace')
 
   function railButtonClasses(active: boolean) {
     return active
@@ -30,62 +32,78 @@ export default function ActivityRail() {
 
   return (
     <div class="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-r border-edge bg-surface py-2">
-      <div
-        class="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-xs font-bold text-accent-contrast"
-        title={appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)?.name ?? 'Workspace'}
-      >
-        {workspaceInitial()}
-      </div>
+      <Tooltip text={workspaceName()}>
+        <div
+          class="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-xs font-bold text-accent-contrast"
+          title={workspaceName()}
+        >
+          {workspaceInitial()}
+        </div>
+      </Tooltip>
 
-      <button
-        class={railButtonClasses(commandPaletteOpen())}
-        title="Command palette (⌘K)"
-        onClick={() => setCommandPaletteOpen(true)}
-      >
-        <span class="text-base leading-none">⌕</span>
-      </button>
+      <Tooltip text="Command palette (⌘K)">
+        <button
+          class={railButtonClasses(commandPaletteOpen())}
+          title="Command palette (⌘K)"
+          onClick={() => setCommandPaletteOpen(true)}
+        >
+          <span class="text-base leading-none">⌕</span>
+        </button>
+      </Tooltip>
 
-      <button
-        class={railButtonClasses(explorerOpen() && explorerTab() === 'requests')}
-        title="Requests (⌘B)"
-        onClick={() => (explorerOpen() && explorerTab() === 'requests' ? setExplorerOpen(false) : openExplorer('requests'))}
-      >
-        <span class="text-base leading-none">▤</span>
-      </button>
+      <Tooltip text="Requests (⌘B)">
+        <button
+          class={railButtonClasses(explorerOpen() && explorerTab() === 'requests')}
+          title="Requests (⌘B)"
+          onClick={() => (explorerOpen() && explorerTab() === 'requests' ? setExplorerOpen(false) : openExplorer('requests'))}
+        >
+          <span class="text-base leading-none">▤</span>
+        </button>
+      </Tooltip>
 
-      <button
-        class={railButtonClasses(explorerOpen() && explorerTab() === 'history')}
-        title="History"
-        onClick={() => (explorerOpen() && explorerTab() === 'history' ? setExplorerOpen(false) : openExplorer('history'))}
-      >
-        <span class="text-base leading-none">◷</span>
-      </button>
+      <Tooltip text="History">
+        <button
+          class={railButtonClasses(explorerOpen() && explorerTab() === 'history')}
+          title="History"
+          onClick={() => (explorerOpen() && explorerTab() === 'history' ? setExplorerOpen(false) : openExplorer('history'))}
+        >
+          <span class="text-base leading-none">◷</span>
+        </button>
+      </Tooltip>
 
-      <button
-        class={railButtonClasses(explorerOpen() && explorerTab() === 'git')}
-        title="Git"
-        onClick={() => (explorerOpen() && explorerTab() === 'git' ? setExplorerOpen(false) : openExplorer('git'))}
-      >
-        <span class="text-base leading-none">⎇</span>
-      </button>
+      <Tooltip text="Git">
+        <button
+          class={railButtonClasses(explorerOpen() && explorerTab() === 'git')}
+          title="Git"
+          onClick={() => (explorerOpen() && explorerTab() === 'git' ? setExplorerOpen(false) : openExplorer('git'))}
+        >
+          <span class="text-base leading-none">⎇</span>
+        </button>
+      </Tooltip>
 
-      <button
-        class={railButtonClasses(explorerOpen() && explorerTab() === 'mcp')}
-        title="MCP tool debugger"
-        onClick={() => (explorerOpen() && explorerTab() === 'mcp' ? setExplorerOpen(false) : openExplorer('mcp'))}
-      >
-        <span class="text-base leading-none">◈</span>
-      </button>
+      <Tooltip text="MCP tool debugger">
+        <button
+          class={railButtonClasses(explorerOpen() && explorerTab() === 'mcp')}
+          title="MCP tool debugger"
+          onClick={() => (explorerOpen() && explorerTab() === 'mcp' ? setExplorerOpen(false) : openExplorer('mcp'))}
+        >
+          <span class="text-base leading-none">◈</span>
+        </button>
+      </Tooltip>
 
-      <button class={railButtonClasses(false)} title="New request (⌘N)" onClick={() => void createRequest()}>
-        <span class="text-base leading-none">+</span>
-      </button>
+      <Tooltip text="New request (⌘N)">
+        <button class={railButtonClasses(false)} title="New request (⌘N)" onClick={() => void createRequest()}>
+          <span class="text-base leading-none">+</span>
+        </button>
+      </Tooltip>
 
       <div class="flex-1" />
 
-      <button class={railButtonClasses(false)} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}>
-        <span class="text-base leading-none">⚙</span>
-      </button>
+      <Tooltip text="Settings (⌘,)">
+        <button class={railButtonClasses(false)} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}>
+          <span class="text-base leading-none">⚙</span>
+        </button>
+      </Tooltip>
     </div>
   )
 }

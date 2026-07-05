@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from 'solid-js'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
@@ -458,7 +458,9 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
     }
   }
 
+  onMount(() => window.addEventListener('apitool:search-body', openSearch))
   onCleanup(() => {
+    window.removeEventListener('apitool:search-body', openSearch)
     view?.destroy()
   })
 

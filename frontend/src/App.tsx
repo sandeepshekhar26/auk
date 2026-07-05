@@ -13,7 +13,7 @@ import StreamConsole from './components/StreamConsole'
 import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
 import McpToolView from './components/McpToolView'
-import { appState, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals } from './lib/store'
+import { appState, closeTab, cycleTab, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals } from './lib/store'
 import { events, wails } from './lib/wails'
 import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
@@ -58,6 +58,32 @@ export default function App() {
     if (meta && e.key.toLowerCase() === 'b') {
       e.preventDefault()
       setExplorerOpen((v) => !v)
+    }
+    if (meta && e.key.toLowerCase() === 'w') {
+      if (appState.activeTabId) {
+        e.preventDefault()
+        closeTab(appState.activeTabId)
+      }
+    }
+    // VSCode's convention for next/previous editor tab — likely already
+    // muscle memory for this app's audience.
+    if (meta && e.shiftKey && e.key === ']') {
+      e.preventDefault()
+      cycleTab(1)
+    }
+    if (meta && e.shiftKey && e.key === '[') {
+      e.preventDefault()
+      cycleTab(-1)
+    }
+    // The response body's "Search" button has always been labeled "(⌘F)",
+    // but nothing dispatched it globally — it only worked by fluke, if the
+    // CodeMirror instance already happened to have keyboard focus (its own
+    // searchKeymap binds Mod-f internally). Broadcasting it here means the
+    // shortcut works regardless of what currently has focus, matching what
+    // the label already promised.
+    if (meta && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      window.dispatchEvent(new CustomEvent('apitool:search-body'))
     }
   }
 

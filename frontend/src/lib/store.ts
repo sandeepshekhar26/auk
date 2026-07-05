@@ -97,6 +97,15 @@ export function closeTab(requestId: string) {
   })
 }
 
+/** Switches the active tab forward (1) or backward (-1) through openTabIds, wrapping around. No-op with 0-1 tabs open. */
+export function cycleTab(direction: 1 | -1): void {
+  const ids = appState.openTabIds
+  if (ids.length < 2) return
+  const currentIndex = appState.activeTabId ? ids.indexOf(appState.activeTabId) : -1
+  const nextIndex = (currentIndex + direction + ids.length) % ids.length
+  setAppState('activeTabId', ids[nextIndex])
+}
+
 export function pushStreamEvent(evt: StreamEvent) {
   setAppState('streamEvents', (events) => [...events.slice(-499), evt])
 }

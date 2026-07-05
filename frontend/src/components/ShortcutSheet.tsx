@@ -2,9 +2,11 @@ import { For, Show, onCleanup, onMount } from 'solid-js'
 import { shortcutSheetOpen, setShortcutSheetOpen } from '../lib/store'
 
 // Dispatch contract: on Cmd/Ctrl+Enter this component fires
-// `window.dispatchEvent(new CustomEvent('apitool:send'))`. RequestEditor's
-// send button should add a `window.addEventListener('apitool:send', ...)`
-// in a future wiring pass to trigger the same send path as a click.
+// `window.dispatchEvent(new CustomEvent('apitool:send'))`, consumed by
+// App.tsx's onSendShortcut to trigger the same send path as a click.
+// App.tsx's onGlobalShortcuts owns ⌘W/⌘Shift+]/⌘Shift+[/⌘F the same way —
+// one place per cross-component shortcut, dispatched as a CustomEvent
+// rather than each component adding its own competing window listener.
 
 interface ShortcutEntry {
   keys: string[]
@@ -16,6 +18,10 @@ const SHORTCUTS: ShortcutEntry[] = [
   { keys: ['⌘', 'B'], description: 'Toggle the requests/history drawer' },
   { keys: ['⌘', 'Enter'], description: 'Send the active request' },
   { keys: ['⌘', 'N'], description: 'New request' },
+  { keys: ['⌘', 'W'], description: 'Close the active request tab' },
+  { keys: ['⌘', '⇧', ']'], description: 'Next request tab' },
+  { keys: ['⌘', '⇧', '['], description: 'Previous request tab' },
+  { keys: ['⌘', 'F'], description: 'Search within the response body' },
   { keys: ['⌘', ','], description: 'Open Settings' },
   { keys: ['⌘', '/'], description: 'Toggle this shortcut sheet' },
   { keys: ['Esc'], description: 'Close the active dialog or panel' },
