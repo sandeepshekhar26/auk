@@ -91,6 +91,16 @@ export default function ActivityRail() {
         </button>
       </Tooltip>
 
+      <Tooltip text="Cookies">
+        <button
+          class={railButtonClasses(explorerOpen() && explorerTab() === 'cookies')}
+          title="Cookies"
+          onClick={() => (explorerOpen() && explorerTab() === 'cookies' ? setExplorerOpen(false) : openExplorer('cookies'))}
+        >
+          <span class="text-base leading-none">◍</span>
+        </button>
+      </Tooltip>
+
       <Tooltip text="New request (⌘N)">
         <button class={railButtonClasses(false)} title="New request (⌘N)" onClick={() => void createRequest()}>
           <span class="text-base leading-none">+</span>

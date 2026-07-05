@@ -89,6 +89,22 @@ func (e *Engine) CaptureCookies(workspaceID model.ID, headers []model.KeyValue) 
 	e.cookies.Capture(workspaceID, headers)
 }
 
+// ListCookies, SetCookie, and DeleteCookie expose the same per-workspace jar
+// CaptureCookies writes into, for the GUI's Cookies panel (view/edit/clear
+// what's been captured) — app.go type-asserts these off Templater the same
+// way core.Engine.RunRequest already does for CaptureCookies.
+func (e *Engine) ListCookies(workspaceID model.ID) []model.KeyValue {
+	return e.cookies.List(workspaceID)
+}
+
+func (e *Engine) SetCookie(workspaceID model.ID, name, value string) {
+	e.cookies.Set(workspaceID, name, value)
+}
+
+func (e *Engine) DeleteCookie(workspaceID model.ID, name string) {
+	e.cookies.Delete(workspaceID, name)
+}
+
 func (e *Engine) Register(name string, fn Func) {
 	e.funcs[name] = fn
 }

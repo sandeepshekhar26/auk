@@ -67,7 +67,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 - [x] JWT auth
 - [x] AWS Signature v4 (2026-07-05) — verified against AWS's own published SigV4 test suite (7 test cases) plus a real signed request against httpbin.org
 - [ ] NTLM
-- [x] Client certificates (mTLS) — backend + tests existed already (internal/protocols/http/http_tls.go, `BuildTLSConfig`); request-level model field + UI + wiring added 2026-07-05 (verified: a real mTLS handshake test with the plain shared client + per-request override, plus round-tripped through the real GUI form -> YAML). Custom CA and skip-verify ship in the same form. Proxy support (`WithProxy`) has the identical shape of gap — tested at the backend, no model field/UI yet — left for a future pass, not done here.
+- [x] Client certificates (mTLS) — backend + tests existed already (internal/protocols/http/http_tls.go, `BuildTLSConfig`); request-level model field + UI + wiring added 2026-07-05 (verified: a real mTLS handshake test with the plain shared client + per-request override, plus round-tripped through the real GUI form -> YAML). Custom CA and skip-verify ship in the same form.
 - [ ] 1Password integration (pull secrets) — needs the user's own 1Password CLI/account; not attempted without that decision
 - [ ] Custom auth via plugins (e.g. RFC 9421 HTTP Message Signatures) — blocked on the plugin runtime
 - [ ] Auth inheritance across workspace/folder/request levels
@@ -92,7 +92,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 
 ### History, cookies & debugging
 - [x] Per-request response history
-- [ ] Cookie jar per workspace with manual cookie editing (an internal per-send `net/http/cookiejar` exists; no persistent workspace jar or edit UI)
+- [x] Cookie jar per workspace with manual cookie editing (2026-07-05) — `internal/cookiejar` gained `List`/`Set`/`Delete`; a new "Cookies" tab in the explorer drawer lists every captured cookie per workspace, in-place edit, delete, and manual add. Session-lifetime only (matches the jar's existing in-memory design — not persisted across an app restart, a deliberate scope choice not attempted here). Verified live: sent a real request to a local server returning `Set-Cookie`, confirmed capture in the panel, edited the value character-by-character with no focus loss (fine-grained store setter under `<For>`), deleted it, and manually added a new cookie.
 - [x] Custom proxy support (2026-07-05) — `WithProxy` already existed and was tested at the backend (`internal/protocols/http`); this pass added `RequestDef.ProxyURL` + a collapsed-by-default UI section next to mTLS, and extended `clientFor` to build a one-off client when either a client cert or a proxy (or both) is set for one request. Verified live against a real local forward-proxy process, not just the existing unit test.
 - [x] Redirect warnings (cross-origin / insecure downgrade flagged in the redirect chain) (2026-07-05)
 

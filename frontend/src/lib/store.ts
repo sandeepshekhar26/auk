@@ -48,7 +48,7 @@ export const [sidebarFilter, setSidebarFilter] = createSignal('')
 // replaces a permanently-docked sidebar — collapsed by default. ⌘B, the rail,
 // and the command palette all toggle the same signal; explorerTab picks
 // which section shows when it opens.
-export type ExplorerTab = 'requests' | 'history' | 'git' | 'mcp'
+export type ExplorerTab = 'requests' | 'history' | 'git' | 'mcp' | 'cookies'
 export const [explorerOpen, setExplorerOpen] = createSignal(false)
 export const [explorerTab, setExplorerTab] = createSignal<ExplorerTab>('requests')
 

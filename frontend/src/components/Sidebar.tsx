@@ -6,6 +6,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HistoryPanel from './HistoryPanel'
 import GitPanel from './GitPanel'
 import McpPanel from './McpPanel'
+import CookiesPanel from './CookiesPanel'
 import KeyValueTable from './KeyValueTable'
 
 interface FolderNode {
@@ -299,6 +300,16 @@ export default function Sidebar() {
             MCP
           </button>
           <button
+            class="flex-1 rounded px-2 py-1 text-xs font-medium"
+            classList={{
+              'bg-raised text-ink': explorerTab() === 'cookies',
+              'text-ink-muted hover:text-ink-dim': explorerTab() !== 'cookies',
+            }}
+            onClick={() => setExplorerTab('cookies')}
+          >
+            Cookies
+          </button>
+          <button
             class="ml-1 rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-raised hover:text-ink-dim"
             title="Close (Esc)"
             onClick={() => setExplorerOpen(false)}
@@ -371,6 +382,12 @@ export default function Sidebar() {
         <Show when={explorerTab() === 'mcp'}>
           <div class="flex-1 overflow-hidden">
             <McpPanel />
+          </div>
+        </Show>
+
+        <Show when={explorerTab() === 'cookies'}>
+          <div class="flex-1 overflow-hidden">
+            <CookiesPanel />
           </div>
         </Show>
       </div>

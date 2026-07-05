@@ -274,6 +274,36 @@ func (a *App) ListHistory() []model.HistoryEntry {
 	return entries
 }
 
+// ListCookies, SetCookie, and DeleteCookie back the Cookies panel (view,
+// manually edit, or clear what ${cookie(name)} has captured for a
+// workspace). Session-lifetime only — nothing here persists across an app
+// restart (see internal/cookiejar's package doc). Reached via the same
+// type-assertion-off-Templater pattern RunRequest already uses for
+// CaptureCookies, rather than widening the core.Templater interface itself
+// for a GUI-only concern most Templater implementations/tests don't need.
+func (a *App) ListCookies(workspaceID string) []model.KeyValue {
+	if lc, ok := a.engine.Templater.(interface {
+		ListCookies(model.ID) []model.KeyValue
+	}); ok {
+		return lc.ListCookies(workspaceID)
+	}
+	return nil
+}
+
+func (a *App) SetCookie(workspaceID, name, value string) {
+	if sc, ok := a.engine.Templater.(interface {
+		SetCookie(model.ID, string, string)
+	}); ok {
+		sc.SetCookie(workspaceID, name, value)
+	}
+}
+
+func (a *App) DeleteCookie(workspaceID, name string) {
+	if dc, ok := a.engine.Templater.(interface{ DeleteCookie(model.ID, string) }); ok {
+		dc.DeleteCookie(workspaceID, name)
+	}
+}
+
 // SendRequest runs one request through the shared engine — origin "gui"
 // distinguishes this call at the policy Dispatch chokepoint from a future
 // MCP-initiated run, which will use a stricter PolicyEngine.

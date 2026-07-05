@@ -1,15 +1,20 @@
-// Package cookiejar is a minimal, session-lifetime (never persisted to disk),
-// per-workspace cookie store: it captures Set-Cookie values from every
-// response so a later request in the same workspace can read them back via
-// the `${cookie(name)}` template function — e.g. grabbing a session cookie
-// set by a login call for use in a subsequent request. Deliberately simple
-// (name -> last value, no domain/path/expiry scoping, no persistence) rather
-// than a spec-complete jar; a persistent, manually-editable per-workspace jar
-// with a real cookie-management UI is a separate, larger roadmap item.
+// Package cookiejar is a minimal, session-lifetime (never persisted to disk —
+// a deliberate choice, not a gap; see List/Set/Delete below), per-workspace
+// cookie store: it captures Set-Cookie values from every response so a
+// later request in the same workspace can read them back via the
+// `${cookie(name)}` template function — e.g. grabbing a session cookie set
+// by a login call for use in a subsequent request. Deliberately simple
+// (name -> last value, no domain/path/expiry scoping) rather than a
+// spec-complete jar. List/Set/Delete back the GUI's Cookies panel (view,
+// manually edit, or clear what's been captured) — durable cross-restart
+// persistence remains a separate, larger decision (where would it live,
+// does it need the same secret-exclusion treatment Environment.Secrets
+// gets) not attempted here.
 package cookiejar
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 
@@ -68,4 +73,40 @@ func (j *Jar) Get(workspaceID model.ID, name string) (string, bool) {
 	}
 	v, ok := m[name]
 	return v, ok
+}
+
+// List returns every cookie currently held for workspaceID as name/value
+// pairs, sorted by name for a stable, deterministic UI ordering.
+func (j *Jar) List(workspaceID model.ID) []model.KeyValue {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	m := j.byWS[workspaceID]
+	out := make([]model.KeyValue, 0, len(m))
+	for name, value := range m {
+		out = append(out, model.KeyValue{Key: name, Value: value, Enabled: true})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// Set manually adds or overwrites one cookie's value for workspaceID — the
+// same last-write-wins slot Capture writes into, so a manual edit and the
+// next real Set-Cookie response behave identically (whichever happens
+// second wins).
+func (j *Jar) Set(workspaceID model.ID, name, value string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	m, ok := j.byWS[workspaceID]
+	if !ok {
+		m = map[string]string{}
+		j.byWS[workspaceID] = m
+	}
+	m[name] = value
+}
+
+// Delete removes one cookie for workspaceID. A no-op if it's already absent.
+func (j *Jar) Delete(workspaceID model.ID, name string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	delete(j.byWS[workspaceID], name)
 }
