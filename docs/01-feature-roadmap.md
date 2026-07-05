@@ -24,7 +24,7 @@ Full parity checklist. These are table-stakes an established Yaak user expects; 
 
 ### Request types (protocols)
 - [x] HTTP / REST (redirects, custom methods)
-- [x] GraphQL (query editor, variables; **schema doc explorer/introspection still missing**)
+- [x] GraphQL (query editor, variables, schema explorer via introspection (2026-07-05); **typed autocomplete-while-typing in the query editor still missing** — see below)
 - [x] gRPC (unary only — server reflection; **streaming and `.proto`-file import still missing**)
 - [x] WebSocket (bidirectional, interactive send/receive console)
 - [x] Server-Sent Events (SSE) streaming request type
@@ -290,7 +290,7 @@ Goal: full protocol coverage, the MCP differentiator, and competitive polish.
 | k6 perf ★ | Run history (git-friendly) + SQLite index; baseline/regression tracking + trend sparklines; AGPLv3 third-party-licenses screen + durable Corresponding Source |
 | Response diff ★ | Two-response / history / cross-env diffing + environment-comparison runs |
 | Environments | Layered inheritance (global → collection → env → local) with explicit precedence |
-| GraphQL | Full introspection UX (typed autocomplete, inline docs, schema explorer) |
+| GraphQL | Full introspection UX (typed autocomplete, inline docs; **schema explorer shipped 2026-07-05** — remaining: autocomplete-while-typing, which needs a hand-built schema-aware CodeMirror completion source, no off-the-shelf package exists) |
 | Plugins | Plugin runtime + SDK + `definePlugin` extension points; plugin CLI |
 | UX | Full customizable hotkeys, themes (+ community), auto-generated request docs, rich response previews |
 

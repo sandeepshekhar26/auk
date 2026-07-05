@@ -216,3 +216,81 @@ func TestApp_RunFolder(t *testing.T) {
 		t.Fatalf("E-after-failure status = %d, want 200 (the batch must continue past D's failure)", got)
 	}
 }
+
+// TestApp_FetchGraphQLSchema exercises the real engine (appcore.NewEngine)
+// against a real HTTP server, proving FetchGraphQLSchema resolves the
+// request through the SAME template+auth path as a normal send — a
+// ${envVar}-templated URL and a configured header both reach the
+// introspection POST — rather than just hitting the request's literal,
+// unresolved URL.
+func TestApp_FetchGraphQLSchema(t *testing.T) {
+	var gotAuthHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthHeader = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"__schema":{"queryType":{"name":"Query"},"types":[{"kind":"OBJECT","name":"Query","fields":[{"name":"ping","args":[],"type":{"kind":"SCALAR","name":"String"}}]}]}}}`))
+	}))
+	defer srv.Close()
+
+	engine, store, err := appcore.NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	a := &App{ctx: context.Background(), store: store, engine: engine}
+
+	const wsID = "ws1"
+	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "test"}); err != nil {
+		t.Fatalf("PutWorkspace: %v", err)
+	}
+	envID := uuid.NewString()
+	if err := store.PutEnvironment(model.Environment{
+		ID: envID, WorkspaceID: wsID,
+		Variables: []model.KeyValue{{Key: "gqlHost", Value: srv.URL, Enabled: true}},
+	}, nil); err != nil {
+		t.Fatalf("PutEnvironment: %v", err)
+	}
+
+	req := model.RequestDef{
+		ID: uuid.NewString(), WorkspaceID: wsID, Name: "gql", Protocol: model.ProtocolGraphQL, Method: "POST",
+		URL:     "${gqlHost}/graphql",
+		Headers: []model.KeyValue{{Key: "Authorization", Value: "Bearer secret-token", Enabled: true}},
+	}
+	if err := store.PutRequest(req); err != nil {
+		t.Fatalf("PutRequest: %v", err)
+	}
+
+	raw, err := a.FetchGraphQLSchema(req.ID, envID)
+	if err != nil {
+		t.Fatalf("FetchGraphQLSchema: %v", err)
+	}
+
+	if gotAuthHeader != "Bearer secret-token" {
+		t.Fatalf("got Authorization header %q, want the configured header to reach introspection (proves ResolveForExecution wiring, not a raw URL hit)", gotAuthHeader)
+	}
+	if !json.Valid([]byte(raw)) {
+		t.Fatalf("FetchGraphQLSchema returned invalid JSON: %s", raw)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		t.Fatalf("unmarshal schema response: %v", err)
+	}
+	if _, ok := decoded["data"]; !ok {
+		t.Fatalf("decoded schema response missing \"data\" key: %v", decoded)
+	}
+}
+
+// TestApp_FetchGraphQLSchema_UnresolvableRequest guards the "no such
+// request" path — FetchGraphQLSchema must surface ResolveForExecution's
+// error rather than panicking or silently returning an empty schema.
+func TestApp_FetchGraphQLSchema_UnresolvableRequest(t *testing.T) {
+	engine, store, err := appcore.NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	a := &App{ctx: context.Background(), store: store, engine: engine}
+
+	if _, err := a.FetchGraphQLSchema("does-not-exist", ""); err == nil {
+		t.Fatal("FetchGraphQLSchema: want an error for an unknown request id, got nil")
+	}
+}

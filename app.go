@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,7 @@ import (
 	"apitool/internal/mcpserver"
 	"apitool/internal/onepassword"
 	"apitool/internal/perf"
+	graphqlprotocol "apitool/internal/protocols/graphql"
 	"apitool/internal/storage"
 )
 
@@ -367,6 +369,26 @@ func (a *App) RunFolder(workspaceID, folderID, environmentID string) []model.Fol
 		results = append(results, model.FolderRunResult{RequestID: req.ID, RequestName: req.Name, Response: resp})
 	}
 	return results
+}
+
+// FetchGraphQLSchema resolves requestID's URL/headers/auth through the same
+// template+auth+policy path as a normal send (so introspection hits exactly
+// what the user configured — environment variables, Bearer tokens, etc.,
+// same reasoning as RunPerfTest) and POSTs the standard introspection query
+// at it, returning the raw `{"data": {"__schema": ...}}` JSON as a plain
+// string (not json.RawMessage — Wails would base64-encode a []byte-backed
+// type, and the frontend needs to JSON.parse this directly) for the schema
+// explorer panel to render.
+func (a *App) FetchGraphQLSchema(requestID, environmentID string) (string, error) {
+	_, resolved, err := a.engine.ResolveForExecution(a.ctx, requestID, environmentID, "gui")
+	if err != nil {
+		return "", err
+	}
+	raw, err := graphqlprotocol.IntrospectWith(a.ctx, http.DefaultClient, resolved.URL, resolved.Headers)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 // JSONPathFilter evaluates a dot/bracket path ("data.items[0].name") against

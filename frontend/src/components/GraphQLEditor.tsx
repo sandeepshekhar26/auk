@@ -1,4 +1,5 @@
 import { appState, setAppState } from '../lib/store'
+import GraphQLSchemaPanel from './GraphQLSchemaPanel'
 import type { RequestBody } from '../types'
 
 // GraphQL request editor: a query pane + a variables (JSON) pane, shown in the
@@ -58,6 +59,7 @@ export default function GraphQLEditor(props: { requestIndex: number }) {
           onInput={(e) => setVariables(e.currentTarget.value)}
         />
       </div>
+      <GraphQLSchemaPanel requestId={req()?.id ?? ''} />
     </div>
   )
 }
