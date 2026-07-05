@@ -136,21 +136,33 @@ AUK is a real macOS app (Wails v2), not just a browser tab:
 
 ## Full feature list
 
-**Protocols**: HTTP, WebSocket, SSE, GraphQL, and gRPC (unary, fully dynamic —
-no precompiled stubs needed), all usable from the desktop GUI via a protocol
-picker on the request. Each gets the right UI: an interactive **WebSocket**
-console (connect/disconnect, a message composer, live frames in the Stream
-Console); a live **SSE** event stream; a **GraphQL** query + variables editor;
-and a minimal **gRPC** panel (fully-qualified method + JSON request message,
-method discovery via server reflection). The same protocols also run headless
-via the CLI.
+**Protocols**: HTTP, WebSocket, SSE, GraphQL, and gRPC (server reflection —
+no `.proto` files or precompiled stubs needed), all usable from the desktop
+GUI via a protocol picker on the request. Each gets the right UI: an
+interactive **WebSocket** console (connect/disconnect, a message composer,
+live frames in the Stream Console); a live **SSE** event stream; a
+**GraphQL** query + variables editor with a live schema explorer (fetched
+via introspection, click a field to copy it); and a **gRPC** panel
+(fully-qualified method + JSON request message) supporting both unary calls
+and server-streaming (a live Connect/Disconnect console, same as WS/SSE) —
+client-streaming/bidi are rejected with a clear message rather than a
+silent hang. **Batch send**: a ▶ button on any folder runs every request
+inside it (recursing into subfolders), with an aggregate pass/fail summary.
+The same protocols also run headless via the CLI.
 
-**Auth**: Basic, Bearer, API Key, JWT, OAuth2 (client credentials).
+**Auth**: Basic, Bearer, API Key, JWT, OAuth 2.0 (client credentials),
+OAuth 1.0 (HMAC-SHA1), AWS Signature v4, client certificates (mTLS, with
+custom CA and skip-verify), a custom HTTP/HTTPS proxy (independent of auth
+and TLS), and **1Password** — any environment variable's value can be an
+`op://vault/item/field` reference, resolved through your own `op` CLI at
+send time.
 
 **Templating**: `${uuid}`, `${timestamp.unix / unixMillis / iso8601 / format(...) / offset(...)}`,
 `${hash.md5 / sha1 / sha256(...)}`, `${encode.base64 / base64url / url(...)}`,
-`${cookie(name)}`, environment variables, and request chaining (reference a
-previous response's JSON by path).
+`${cookie(name)}`, `${fs.read(...)}`, environment variables (with
+folder-scoped overrides — closest folder wins), and request chaining
+(reference a previous response's JSON by path, auto-sending it first if it
+hasn't run yet).
 
 **Pre-request scripting**: sandboxed JavaScript (no I/O), read `ctx.request`,
 call `ctx.setHeader(name, value)`, 2-second execution timeout.
@@ -159,11 +171,15 @@ call `ctx.setHeader(name, value)`, 2-second execution timeout.
 `eq`/`neq`/`contains`/`matches`/`lt`/`gt`/`exists`/`notExists`. Enforced
 identically in the GUI, the CLI (non-zero exit), and over MCP.
 
-**Import**: cURL, OpenAPI 3.x / Swagger 2.0 (JSON or YAML), Postman
-Collection v2.1 — auto-detected from pasted text.
+**Import / export**: cURL, OpenAPI 3.x / Swagger 2.0 (JSON or YAML), Postman
+Collection v2/2.1 — auto-detected from pasted text. Export a whole
+workspace as one portable JSON file (secret values are never included).
 
 **Response viewer**: theme-aware JSON syntax highlighting, `⌘F` search,
-diff against the previous response, headers, and the timing/redirect tab.
+diff against the previous response, a JSONPath filter for large bodies,
+headers, the timing/redirect tab, a per-workspace **cookie jar** (view,
+edit, delete, or manually add captured cookies), and code-snippet
+generation ("Copy as" cURL, Python, JavaScript, or Go).
 
 **k6 performance testing**: executor + VUs + duration config, live req/s +
 p95 chart, SLA thresholds, pass/fail verdict.
@@ -179,7 +195,8 @@ with an approval prompt gating mutating requests.
 its tools, test-invoke them with a JSON-Schema-driven form.
 
 **Theme**: System/Light/Dark, semantic CSS-variable tokens throughout (no
-raw palette classes), self-hosted Inter + JetBrains Mono fonts.
+raw palette classes), self-hosted Inter + JetBrains Mono fonts,
+environment color-coding to keep production unmistakable.
 
 **Headless CLI**: `apitool-cli run <requestID> --workspace-dir=DIR
 [--env=ENVIRONMENT_ID]` — runs the identical engine the GUI uses, so it's a
@@ -198,6 +215,9 @@ AGPLv3; the app is not).
 ## What's next
 
 Plugin runtime, community themes, a durable response-body archive (for
-cross-session diffing), gRPC streaming, AWS SigV4 / NTLM / 1Password auth,
-distributed k6, fuller git (branch/merge/diff — today is status + log +
-commit + push), and MCP resources/prompts (tools only, today).
+cross-session diffing), gRPC client-streaming/bidi + `.proto` import,
+GraphQL autocomplete-while-typing, NTLM auth (deliberately deferred — it
+needs a challenge-response retry loop that doesn't fit this app's auth
+model the way every other method here does), distributed k6, fuller git
+(branch/merge/diff — today is status + log + commit + push), and MCP
+resources/prompts (tools only, today).
