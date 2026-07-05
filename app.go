@@ -23,6 +23,7 @@ import (
 	"apitool/internal/jsonpath"
 	"apitool/internal/mcpclient"
 	"apitool/internal/mcpserver"
+	"apitool/internal/onepassword"
 	"apitool/internal/perf"
 	"apitool/internal/storage"
 )
@@ -489,6 +490,14 @@ func (a *App) CheckK6() string {
 		return err.Error()
 	}
 	return ""
+}
+
+// CheckOnePassword reports whether the 1Password CLI (op) is on PATH, so the
+// environment editor can tell the user up front whether an op:// reference
+// they've typed will actually resolve, rather than only finding out at send
+// time.
+func (a *App) CheckOnePassword() bool {
+	return onepassword.Available()
 }
 
 // wailsPerfSink forwards coalesced (≤1/sec) perf sample points to the webview

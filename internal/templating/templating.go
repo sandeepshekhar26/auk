@@ -27,6 +27,7 @@ import (
 	"apitool/internal/cookiejar"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
+	"apitool/internal/onepassword"
 )
 
 var refPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
@@ -197,6 +198,24 @@ func (e *Engine) Resolve(ctx context.Context, req model.RequestDef, env *model.E
 // `func(args)` call, or a `response('ReqName').body` chaining reference.
 func (e *Engine) eval(ctx context.Context, expr string, workspaceID model.ID, vars map[string]string, history core.ResponseLookup) (string, error) {
 	if v, ok := vars[expr]; ok {
+		// A variable's value (plain, or OS-keychain-backed — env.Secrets
+		// resolution already happened by the time it reaches here, see
+		// storage.FileStore.GetEnvironment) can ALSO be a 1Password
+		// reference instead of a literal, resolved here (lazily, only for
+		// variables a request ACTUALLY references) so every existing
+		// ${varName} use site (headers, URL, body, params) gets 1Password
+		// support for free, without auth methods needing their own
+		// separate op:// handling. Lazy, not resolved up front alongside
+		// every other variable in the environment, so an unrelated broken
+		// op:// variable elsewhere in the same environment can't break a
+		// request that never references it.
+		if onepassword.IsRef(v) {
+			resolved, err := onepassword.Read(ctx, v)
+			if err != nil {
+				return "", fmt.Errorf("variable %q: %w", expr, err)
+			}
+			return resolved, nil
+		}
 		return v, nil
 	}
 

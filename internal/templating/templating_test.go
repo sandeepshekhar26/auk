@@ -317,6 +317,90 @@ func TestCookie(t *testing.T) {
 	})
 }
 
+// TestOnePasswordVariable_AbsentCLI forces the "op not on PATH" path
+// deterministically (PATH pointed at an empty temp dir) rather than relying
+// on whatever machine runs this suite — op is confirmed not installed in
+// the environment this was written in, and there's no test 1Password vault
+// to exercise a real read against, matching the same "verify the graceful-
+// absence path" approach used in internal/onepassword's own tests.
+func TestOnePasswordVariable_AbsentCLI(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	e := New(nil)
+	env := &model.Environment{
+		Variables: []model.KeyValue{
+			{Key: "apiToken", Value: "op://Work/GitHub/token", Enabled: true},
+		},
+	}
+	req := model.RequestDef{URL: "https://api.example.com/x?t=${apiToken}", Method: "GET"}
+
+	_, err := e.Resolve(context.Background(), req, env, nil)
+	if err == nil {
+		t.Fatal("Resolve: want an error when op isn't on PATH, got nil")
+	}
+	if !strings.Contains(err.Error(), "apiToken") {
+		t.Fatalf("Resolve error = %q, want it to name the variable (apiToken)", err.Error())
+	}
+	if !strings.Contains(err.Error(), "not found on PATH") {
+		t.Fatalf("Resolve error = %q, want it to mention op isn't on PATH", err.Error())
+	}
+}
+
+// TestOnePasswordVariable_UnreferencedBrokenRefDoesNotFailRequest guards
+// against resolving every environment variable eagerly (an earlier version
+// of this feature did exactly that): an op:// variable that EXISTS,
+// ENABLED, in the environment, but that this particular request never
+// references, must not make the request fail just because op isn't
+// installed. Only a variable a request actually uses should ever trigger a
+// 1Password lookup.
+func TestOnePasswordVariable_UnreferencedBrokenRefDoesNotFailRequest(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	e := New(nil)
+	env := &model.Environment{
+		Variables: []model.KeyValue{
+			{Key: "host", Value: "api.example.com", Enabled: true},
+			{Key: "unrelatedToken", Value: "op://Work/GitHub/token", Enabled: true},
+		},
+	}
+	req := model.RequestDef{URL: "https://${host}/x", Method: "GET"}
+
+	resolved, err := e.Resolve(context.Background(), req, env, nil)
+	if err != nil {
+		t.Fatalf("unexpected error (request never references unrelatedToken): %v", err)
+	}
+	want := "https://api.example.com/x"
+	if resolved.URL != want {
+		t.Fatalf("got %q, want %q", resolved.URL, want)
+	}
+}
+
+// TestOnePasswordVariable_PlainVariablesUnaffected guards the common case:
+// a request with no op:// values must resolve exactly as before this
+// feature existed, even with a variable disabled and PATH forced empty (so
+// this can't accidentally pass only because the real host has op installed).
+func TestOnePasswordVariable_PlainVariablesUnaffected(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	e := New(nil)
+	env := &model.Environment{
+		Variables: []model.KeyValue{
+			{Key: "host", Value: "api.example.com", Enabled: true},
+			{Key: "ignored", Value: "op://should/not/be/touched", Enabled: false},
+		},
+	}
+	req := model.RequestDef{URL: "https://${host}/x", Method: "GET"}
+
+	resolved, err := e.Resolve(context.Background(), req, env, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "https://api.example.com/x"
+	if resolved.URL != want {
+		t.Fatalf("got %q, want %q", resolved.URL, want)
+	}
+}
+
 func TestPrompt(t *testing.T) {
 	e := New(nil)
 	t.Run("not supported headlessly", func(t *testing.T) {

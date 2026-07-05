@@ -29,6 +29,15 @@ export default function EnvironmentEditor() {
   const [secretValues, setSecretValues] = createSignal<SecretValues>({})
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
+  // null = not checked yet. A plain PATH lookup (internal/onepassword.
+  // Available), cheap enough to run once on mount rather than gating it
+  // behind "only if a variable looks like an op:// ref" — checked eagerly
+  // so the hint next to a ref is never stale relative to whether op is
+  // actually reachable.
+  const [opAvailable, setOpAvailable] = createSignal<boolean | null>(null)
+  onMount(() => {
+    void wails.CheckOnePassword().then(setOpAvailable)
+  })
   // Ids minted by createEnvironment() in this session, not yet round-tripped
   // through CreateEnvironment. Used to pick Create vs Update on save.
   const [pendingNewIds, setPendingNewIds] = createSignal<Set<string>>(new Set())
@@ -127,6 +136,16 @@ export default function EnvironmentEditor() {
 
   function isSecret(env: (typeof appState.environments)[number], varKey: string) {
     return env.secrets.includes(varKey)
+  }
+
+  // A variable typed as an op://vault/item/field reference resolves through
+  // the 1Password CLI at send time (internal/templating.Engine.Resolve) —
+  // this just checks the CURRENTLY DISPLAYED value (the secret-values draft
+  // when the row is toggled to Secret, otherwise the plain value) so the
+  // hint tracks whatever the user is looking at right now.
+  function isOnePasswordRef(env: (typeof appState.environments)[number], v: KeyValue) {
+    const displayed = isSecret(env, v.key) ? (secretValues()[secretKey(env.id, v.key)] ?? '') : v.value
+    return displayed.startsWith('op://')
   }
 
   function toggleSecret(envId: string, index: number, checked: boolean) {
@@ -319,10 +338,11 @@ export default function EnvironmentEditor() {
                   </div>
 
                   <div class="flex-1 overflow-y-auto px-4 py-3">
-                    <div class="grid grid-cols-[1fr_1fr_auto_auto] items-center gap-x-2 gap-y-1.5 text-xs">
+                    <div class="grid grid-cols-[1fr_1fr_auto_auto_auto] items-center gap-x-2 gap-y-1.5 text-xs">
                       <span class="text-ink-muted">Key</span>
                       <span class="text-ink-muted">Value</span>
                       <span class="text-ink-muted">Secret</span>
+                      <span />
                       <span />
                       <For each={env().variables}>
                         {(v, i) => (
@@ -367,6 +387,23 @@ export default function EnvironmentEditor() {
                             >
                               ✕
                             </button>
+                            <Show when={isOnePasswordRef(env(), v)} fallback={<span />}>
+                              <span
+                                class="whitespace-nowrap text-[10px] font-medium"
+                                classList={{
+                                  'text-accent-fg': opAvailable() === true,
+                                  'text-danger': opAvailable() === false,
+                                  'text-ink-faint': opAvailable() === null,
+                                }}
+                                title={
+                                  opAvailable() === false
+                                    ? '1Password CLI (op) not found on PATH — install it to resolve this reference'
+                                    : '1Password reference — resolved at send time via the op CLI'
+                                }
+                              >
+                                {opAvailable() === false ? '⚠ op not found' : '1Password'}
+                              </span>
+                            </Show>
                           </>
                         )}
                       </For>
