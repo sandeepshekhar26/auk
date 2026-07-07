@@ -221,6 +221,55 @@ func sameParent(a, b *model.ID) bool {
 	return *a == *b
 }
 
+// RemoveFolder deletes a folder and, recursively, every child folder and
+// request nested inside it — matching Postman/Insomnia/Yaak's cascading
+// delete. The alternative (re-parenting orphaned children) is more
+// surprising: a folder a user explicitly deleted would keep silently
+// reappearing as its former contents resurface elsewhere. Removing an id
+// that doesn't exist is a no-op (see RemoveMcpConnection).
+func (s *FileStore) RemoveFolder(id model.ID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.removeFolderLocked(id)
+}
+
+func (s *FileStore) removeFolderLocked(id model.ID) error {
+	f, ok := s.folders[id]
+	if !ok {
+		return nil
+	}
+
+	var childFolders []model.ID
+	for _, existing := range s.folders {
+		if existing.ParentID != nil && *existing.ParentID == id {
+			childFolders = append(childFolders, existing.ID)
+		}
+	}
+	for _, childID := range childFolders {
+		if err := s.removeFolderLocked(childID); err != nil {
+			return err
+		}
+	}
+
+	var childRequests []model.ID
+	for _, existing := range s.requests {
+		if existing.FolderID != nil && *existing.FolderID == id {
+			childRequests = append(childRequests, existing.ID)
+		}
+	}
+	for _, reqID := range childRequests {
+		if err := s.removeRequestLocked(reqID); err != nil {
+			return err
+		}
+	}
+
+	if err := os.Remove(folderFile(s.rootDir, f.WorkspaceID, f.ID)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove folder file: %w", err)
+	}
+	delete(s.folders, id)
+	return nil
+}
+
 // PutRequest creates or overwrites a request. Same OrderKey-generation rule
 // as PutFolder: an empty OrderKey gets a fresh one appended after every
 // existing sibling in the same folder.
@@ -248,6 +297,28 @@ func (s *FileStore) nextRequestOrderKeyLocked(workspaceID model.ID, folderID *mo
 		}
 	}
 	return OrderKeyBetween(last, "")
+}
+
+// RemoveRequest deletes a request's YAML file and drops it from memory
+// (including its cached lastResponse, so a stale response can't outlive the
+// request it belongs to). Removing an id that doesn't exist is a no-op.
+func (s *FileStore) RemoveRequest(id model.ID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.removeRequestLocked(id)
+}
+
+func (s *FileStore) removeRequestLocked(id model.ID) error {
+	r, ok := s.requests[id]
+	if !ok {
+		return nil
+	}
+	if err := os.Remove(requestFile(s.rootDir, r.WorkspaceID, r.ID)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove request file: %w", err)
+	}
+	delete(s.requests, id)
+	delete(s.lastResponses, id)
+	return nil
 }
 
 // PutMcpConnection creates or overwrites a developer-configured MCP server
@@ -347,6 +418,28 @@ func (s *FileStore) PutEnvironment(e model.Environment, secretValues map[string]
 	}
 
 	s.environments[e.ID] = e
+	return nil
+}
+
+// RemoveEnvironment deletes an environment's YAML file, any secret values it
+// holds in the OS keychain, and drops it from memory. Removing an id that
+// doesn't exist is a no-op.
+func (s *FileStore) RemoveEnvironment(id model.ID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.environments[id]
+	if !ok {
+		return nil
+	}
+	if err := os.Remove(environmentFile(s.rootDir, e.WorkspaceID, e.ID)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove environment file: %w", err)
+	}
+	for _, name := range e.Secrets {
+		if err := s.secrets.Delete(secretServiceName, secretAccount(e.WorkspaceID, e.ID, name)); err != nil {
+			return fmt.Errorf("remove secret %q: %w", name, err)
+		}
+	}
+	delete(s.environments, id)
 	return nil
 }
 

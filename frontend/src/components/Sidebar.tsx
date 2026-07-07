@@ -1,6 +1,6 @@
 import { Index, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor } from 'solid-js'
 import { appState, setAppState, openTab, sidebarFilter, setSidebarFilter, explorerOpen, explorerTab, setExplorerTab, setExplorerOpen } from '../lib/store'
-import { createRequest, createFolder, runFolder, saveFolderDebounced } from '../lib/data'
+import { createRequest, createFolder, runFolder, saveFolderDebounced, deleteFolder, deleteRequest } from '../lib/data'
 import type { Folder, KeyValue, RequestDef } from '../types'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import HistoryPanel from './HistoryPanel'
@@ -45,6 +45,12 @@ function buildTree(folders: Folder[], requests: RequestDef[]): FolderNode {
   sortTree(root)
 
   return root
+}
+
+// Counts every request and child folder nested (at any depth) inside node,
+// for the delete confirmation's "this also deletes N items" warning.
+function countDescendants(node: FolderNode): number {
+  return node.requests.length + node.children.reduce((sum, child) => sum + 1 + countDescendants(child), 0)
 }
 
 // A folder survives filtering if it (or any descendant request/folder) matches.
@@ -160,6 +166,19 @@ export default function Sidebar() {
     setExplorerOpen(false)
   }
 
+  function confirmDeleteFolder(node: FolderNode) {
+    const folder = node.folder!
+    const nested = countDescendants(node)
+    const warning = nested > 0 ? ` This also deletes ${nested} item${nested === 1 ? '' : 's'} inside it.` : ''
+    if (!confirm(`Delete folder "${folder.name}"?${warning} This cannot be undone.`)) return
+    void deleteFolder(folder.id)
+  }
+
+  function confirmDeleteRequest(req: RequestDef) {
+    if (!confirm(`Delete request "${req.name}"? This cannot be undone.`)) return
+    void deleteRequest(req.id)
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape' && explorerOpen()) setExplorerOpen(false)
   }
@@ -220,6 +239,13 @@ export default function Sidebar() {
           >
             ▶
           </button>
+          <button
+            class="shrink-0 rounded px-1 text-xs text-ink-faint opacity-0 hover:bg-elevated hover:text-danger group-hover:opacity-100"
+            title="Delete folder"
+            onClick={() => confirmDeleteFolder(props.node())}
+          >
+            ×
+          </button>
         </div>
         <Show when={varsOpen()}>
           <div style={{ 'padding-left': `${8 + (props.depth + 1) * 14}px` }}>
@@ -242,14 +268,22 @@ export default function Sidebar() {
   function RequestRow(props: { req: Accessor<RequestDef>; depth: number }) {
     return (
       <Show when={!filtering() || matchesRequest(props.req(), query())}>
-        <button
-          class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm text-ink-dim hover:bg-raised"
-          style={{ 'padding-left': `${8 + props.depth * 14}px` }}
-          onClick={() => pickRequest(props.req().id)}
-        >
-          <span class="w-12 shrink-0 font-mono text-[10px] font-semibold text-accent-fg">{props.req().method}</span>
-          <span class="truncate">{props.req().name}</span>
-        </button>
+        <div class="group flex w-full items-center gap-1 rounded hover:bg-raised" style={{ 'padding-left': `${8 + props.depth * 14}px` }}>
+          <button
+            class="flex min-w-0 flex-1 items-center gap-2 py-1 pr-2 text-left text-sm text-ink-dim"
+            onClick={() => pickRequest(props.req().id)}
+          >
+            <span class="w-12 shrink-0 font-mono text-[10px] font-semibold text-accent-fg">{props.req().method}</span>
+            <span class="truncate">{props.req().name}</span>
+          </button>
+          <button
+            class="mr-2 shrink-0 rounded px-1 text-xs text-ink-faint opacity-0 hover:bg-elevated hover:text-danger group-hover:opacity-100"
+            title="Delete request"
+            onClick={() => confirmDeleteRequest(props.req())}
+          >
+            ×
+          </button>
+        </div>
       </Show>
     )
   }

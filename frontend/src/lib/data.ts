@@ -3,7 +3,7 @@
 // appState, but nothing ever called ListWorkspaces/ListRequests/etc. to put
 // real data into it, so the app opened to a permanently empty shell with no
 // way to create anything either.
-import { appState, setAppState, openTab, setFolderRunView, setMcpToolView } from './store'
+import { appState, setAppState, openTab, closeTab, setFolderRunView, setMcpToolView } from './store'
 import { models, wails } from './wails'
 import type { model as wailsModel } from '../../wailsjs/go/models'
 import type { Environment, Folder, FolderRunResult, McpConnection, RequestDef } from '../types'
@@ -154,6 +154,14 @@ export async function createRequest(): Promise<void> {
   openTab(draft.id)
 }
 
+/** Deletes a request and closes its tab if it's currently open. */
+export async function deleteRequest(id: string): Promise<void> {
+  if (!appState.activeWorkspaceId) return
+  await wails.DeleteRequest(id)
+  closeTab(id)
+  await loadWorkspaceData(appState.activeWorkspaceId)
+}
+
 /**
  * Creates a folder, optionally nested under parentId (undefined/null = a
  * root-level folder in the active workspace). Mirrors createRequest's
@@ -172,6 +180,26 @@ export async function createFolder(parentId?: string | null): Promise<void> {
   }
 
   await wails.CreateFolder(models.Folder.createFrom(draft))
+  await loadWorkspaceData(appState.activeWorkspaceId)
+}
+
+// Mirrors the backend's own cascade (FileStore.removeFolderLocked): every
+// request directly inside folderId, plus every request inside any nested
+// subfolder, recursively. Used only to know which open tabs to close —
+// the actual deletion is one DeleteFolder call, the backend does the walk
+// for real.
+function collectDescendantRequestIds(folderId: string): string[] {
+  const childFolderIds = appState.folders.filter((f) => f.parentId === folderId).map((f) => f.id)
+  const directRequestIds = appState.requests.filter((r) => r.folderId === folderId).map((r) => r.id)
+  return [...directRequestIds, ...childFolderIds.flatMap(collectDescendantRequestIds)]
+}
+
+/** Deletes a folder and everything nested inside it, closing tabs for any requests that go with it. */
+export async function deleteFolder(id: string): Promise<void> {
+  if (!appState.activeWorkspaceId) return
+  const descendantRequestIds = collectDescendantRequestIds(id)
+  await wails.DeleteFolder(id)
+  descendantRequestIds.forEach(closeTab)
   await loadWorkspaceData(appState.activeWorkspaceId)
 }
 

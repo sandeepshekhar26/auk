@@ -96,6 +96,10 @@ export default function EnvironmentEditor() {
     const env = appState.environments.find((e) => e.id === id)
     if (!env) return
     if (!confirm(`Delete environment "${env.name}"? This cannot be undone.`)) return
+    // A draft created this session but never saved has no backend row yet
+    // (isNew mirrors save()'s own Create-vs-Update branch) — nothing to
+    // delete there, so skip the round trip.
+    const isNew = pendingNewIds().has(id)
     setAppState('environments', (envs) => envs.filter((e) => e.id !== id))
     setPendingNewIds((ids) => {
       const next = new Set(ids)
@@ -103,6 +107,8 @@ export default function EnvironmentEditor() {
       return next
     })
     if (selectedId() === id) setSelectedId(null)
+    if (appState.activeEnvironmentId === id) setAppState('activeEnvironmentId', null)
+    if (!isNew) await wails.DeleteEnvironment(id)
   }
 
   function addVariable(envId: string) {

@@ -212,6 +212,12 @@ func (a *App) UpdateFolder(f model.Folder) error {
 	return a.store.PutFolder(f)
 }
 
+// DeleteFolder removes a folder and, recursively, everything nested inside
+// it (child folders and requests) — see FileStore.RemoveFolder.
+func (a *App) DeleteFolder(id string) error {
+	return a.store.RemoveFolder(id)
+}
+
 // ListEnvironments is bound to the frontend.
 func (a *App) ListEnvironments(workspaceID string) []model.Environment {
 	return a.store.ListEnvironments(workspaceID)
@@ -443,6 +449,11 @@ func (a *App) UpdateRequest(req model.RequestDef) error {
 	return a.store.PutRequest(req)
 }
 
+// DeleteRequest removes a request definition — see FileStore.RemoveRequest.
+func (a *App) DeleteRequest(id string) error {
+	return a.store.RemoveRequest(id)
+}
+
 // ImportCurl parses a pasted cURL command into a RequestDef the frontend can
 // preview/edit before saving via CreateRequest. It does not persist
 // anything itself — matching internal/importer's design of staying
@@ -512,6 +523,12 @@ func (a *App) CreateEnvironment(env model.Environment, secretValues map[string]s
 // create-or-replace semantics as CreateEnvironment.
 func (a *App) UpdateEnvironment(env model.Environment, secretValues map[string]string) error {
 	return a.store.PutEnvironment(env, secretValues)
+}
+
+// DeleteEnvironment removes an environment and any secret values it holds in
+// the OS keychain — see FileStore.RemoveEnvironment.
+func (a *App) DeleteEnvironment(id string) error {
+	return a.store.RemoveEnvironment(id)
 }
 
 // GetSettings returns app-level preferences (theme, ...). A missing

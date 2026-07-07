@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/zalando/go-keyring"
@@ -14,6 +15,10 @@ import (
 type SecretStore interface {
 	Get(service, account string) (string, error)
 	Set(service, account, value string) error
+	// Delete removes a secret. Deleting one that was never set (e.g. a
+	// variable marked secret but never given a value) is a no-op, not an
+	// error — mirrors FileStore's own "removing something already gone"
+	// convention (see RemoveMcpConnection).
 	Delete(service, account string) error
 }
 
@@ -40,7 +45,7 @@ func (KeyringSecretStore) Set(service, account, value string) error {
 }
 
 func (KeyringSecretStore) Delete(service, account string) error {
-	if err := keyring.Delete(service, account); err != nil {
+	if err := keyring.Delete(service, account); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return fmt.Errorf("keyring delete %s/%s: %w", service, account, err)
 	}
 	return nil

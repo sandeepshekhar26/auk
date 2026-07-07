@@ -370,3 +370,129 @@ func TestFileStore_FolderOrderKeyPerParent(t *testing.T) {
 		t.Errorf("expected f3 to have a non-empty order key")
 	}
 }
+
+func TestFileStore_RemoveRequest(t *testing.T) {
+	fs, dir := newTestFileStore(t)
+
+	req := model.RequestDef{ID: "req1", WorkspaceID: "ws1", Name: "Temp", Protocol: model.ProtocolHTTP, Method: "GET", URL: "https://example.com"}
+	if err := fs.PutRequest(req); err != nil {
+		t.Fatalf("PutRequest: %v", err)
+	}
+	if err := fs.SaveResponse(model.ResponseData{RequestID: "req1", Status: 200}); err != nil {
+		t.Fatalf("SaveResponse: %v", err)
+	}
+	path := requestFile(dir, "ws1", "req1")
+
+	if err := fs.RemoveRequest("req1"); err != nil {
+		t.Fatalf("RemoveRequest: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected the request file to be deleted, stat err = %v", err)
+	}
+	if _, err := fs.GetRequest("req1"); err == nil {
+		t.Errorf("expected GetRequest to fail after removal")
+	}
+	if _, ok := fs.LastResponse("req1"); ok {
+		t.Errorf("expected the cached lastResponse to be cleared on removal")
+	}
+
+	// Removing an id that never existed is a no-op, not an error.
+	if err := fs.RemoveRequest("does-not-exist"); err != nil {
+		t.Errorf("RemoveRequest on unknown id should be a no-op, got: %v", err)
+	}
+}
+
+// TestFileStore_RemoveFolder_CascadesToChildFoldersAndRequests builds a
+// two-level tree (folder -> subfolder -> request, plus a request directly in
+// the top folder) alongside an untouched sibling folder+request, and
+// confirms deleting the top folder removes every nested file but leaves the
+// sibling alone — the cascade must recurse without over-deleting.
+func TestFileStore_RemoveFolder_CascadesToChildFoldersAndRequests(t *testing.T) {
+	fs, dir := newTestFileStore(t)
+
+	top := model.Folder{ID: "top", WorkspaceID: "ws1", Name: "Top"}
+	sub := model.Folder{ID: "sub", WorkspaceID: "ws1", ParentID: &top.ID, Name: "Sub"}
+	sibling := model.Folder{ID: "sibling", WorkspaceID: "ws1", Name: "Sibling"}
+	for _, f := range []model.Folder{top, sub, sibling} {
+		if err := fs.PutFolder(f); err != nil {
+			t.Fatalf("PutFolder(%s): %v", f.ID, err)
+		}
+	}
+
+	reqInTop := model.RequestDef{ID: "reqTop", WorkspaceID: "ws1", FolderID: &top.ID, Name: "in top", Protocol: model.ProtocolHTTP, Method: "GET", URL: "https://a"}
+	reqInSub := model.RequestDef{ID: "reqSub", WorkspaceID: "ws1", FolderID: &sub.ID, Name: "in sub", Protocol: model.ProtocolHTTP, Method: "GET", URL: "https://b"}
+	reqInSibling := model.RequestDef{ID: "reqSibling", WorkspaceID: "ws1", FolderID: &sibling.ID, Name: "in sibling", Protocol: model.ProtocolHTTP, Method: "GET", URL: "https://c"}
+	for _, r := range []model.RequestDef{reqInTop, reqInSub, reqInSibling} {
+		if err := fs.PutRequest(r); err != nil {
+			t.Fatalf("PutRequest(%s): %v", r.ID, err)
+		}
+	}
+
+	if err := fs.RemoveFolder("top"); err != nil {
+		t.Fatalf("RemoveFolder: %v", err)
+	}
+
+	for _, gone := range []string{"top", "sub"} {
+		if _, err := os.Stat(folderFile(dir, "ws1", gone)); !os.IsNotExist(err) {
+			t.Errorf("expected folder %q file to be deleted, stat err = %v", gone, err)
+		}
+	}
+	for _, gone := range []string{"reqTop", "reqSub"} {
+		if _, err := os.Stat(requestFile(dir, "ws1", gone)); !os.IsNotExist(err) {
+			t.Errorf("expected request %q file to be deleted, stat err = %v", gone, err)
+		}
+		if _, err := fs.GetRequest(gone); err == nil {
+			t.Errorf("expected GetRequest(%q) to fail after cascading removal", gone)
+		}
+	}
+
+	// The sibling subtree must survive untouched.
+	if _, err := os.Stat(folderFile(dir, "ws1", "sibling")); err != nil {
+		t.Errorf("expected sibling folder file to survive: %v", err)
+	}
+	if _, err := fs.GetRequest("reqSibling"); err != nil {
+		t.Errorf("expected sibling's request to survive: %v", err)
+	}
+
+	remainingFolders := fs.ListFolders("ws1")
+	if len(remainingFolders) != 1 || remainingFolders[0].ID != "sibling" {
+		t.Errorf("ListFolders after cascade = %+v, want exactly [sibling]", remainingFolders)
+	}
+
+	// Removing an id that never existed is a no-op, not an error.
+	if err := fs.RemoveFolder("does-not-exist"); err != nil {
+		t.Errorf("RemoveFolder on unknown id should be a no-op, got: %v", err)
+	}
+}
+
+func TestFileStore_RemoveEnvironment(t *testing.T) {
+	fs, dir := newTestFileStore(t)
+
+	env := model.Environment{
+		ID: "env1", WorkspaceID: "ws1", Name: "Prod",
+		Variables: []model.KeyValue{{Key: "apiKey", Value: "super-secret-value", Enabled: true}},
+		Secrets:   []string{"apiKey"},
+	}
+	if err := fs.PutEnvironment(env, map[string]string{"apiKey": "super-secret-value"}); err != nil {
+		t.Fatalf("PutEnvironment: %v", err)
+	}
+	path := environmentFile(dir, "ws1", "env1")
+
+	if err := fs.RemoveEnvironment("env1"); err != nil {
+		t.Fatalf("RemoveEnvironment: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected the environment file to be deleted, stat err = %v", err)
+	}
+	if _, err := fs.GetEnvironment("env1"); err == nil {
+		t.Errorf("expected GetEnvironment to fail after removal")
+	}
+	if _, err := fs.secrets.Get(secretServiceName, secretAccount("ws1", "env1", "apiKey")); err == nil {
+		t.Errorf("expected the secret to be removed from the keychain too")
+	}
+
+	// Removing an id that never existed is a no-op, not an error.
+	if err := fs.RemoveEnvironment("does-not-exist"); err != nil {
+		t.Errorf("RemoveEnvironment on unknown id should be a no-op, got: %v", err)
+	}
+}
