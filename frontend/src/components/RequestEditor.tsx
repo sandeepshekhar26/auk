@@ -47,6 +47,39 @@ const URL_PLACEHOLDER: Record<ProtocolKind, string> = {
   grpc: 'example.com:443',
 }
 
+// URL <-> Params sync helpers. Deliberately NOT the URL/URLSearchParams web
+// APIs: AUK's URLs are routinely templated (${baseUrl}/foo), which isn't a
+// valid absolute URL those constructors accept, and URLSearchParams always
+// percent-encodes on both parse and stringify — which would silently mangle
+// a literal ${uuid()} template ref typed into a param's value into
+// %24%7Buuid()%7D in the URL bar. A manual, literal split keeps the URL bar
+// a WYSIWYG preview; the one real percent-encoding pass already happens
+// once, at send time, in the Go backend's buildURL (internal/protocols/http).
+function splitQuery(url: string): { base: string; query: string } {
+  const idx = url.indexOf('?')
+  return idx === -1 ? { base: url, query: '' } : { base: url.slice(0, idx), query: url.slice(idx + 1) }
+}
+
+function parseQueryParams(query: string): KeyValue[] {
+  if (!query) return []
+  return query.split('&').map((pair) => {
+    const eq = pair.indexOf('=')
+    return eq === -1
+      ? { key: pair, value: '', enabled: true }
+      : { key: pair.slice(0, eq), value: pair.slice(eq + 1), enabled: true }
+  })
+}
+
+// Mirrors the backend's own filter (buildURL skips a disabled row or one
+// with no key at all — an incomplete row, not a real query param) so the
+// URL bar preview never disagrees with what's actually sent.
+function buildQueryString(params: KeyValue[] | undefined): string {
+  return (params ?? [])
+    .filter((p) => p.enabled && p.key)
+    .map((p) => `${p.key}=${p.value}`)
+    .join('&')
+}
+
 type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'script' | 'assert' | 'perf'
 const TABS: { id: EditorTab; label: string }[] = [
   { id: 'params', label: 'Params' },
@@ -145,10 +178,25 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
     ),
   )
 
+  // Rebuilds the URL's query-string suffix from the params table's ENABLED
+  // rows (mirroring the backend's own filter — see buildQueryString), so
+  // editing/toggling/removing a param reflects live in the URL bar. Only
+  // writes when the rebuilt query actually differs, so this can't fight
+  // with someone mid-typing directly in the URL bar (see onUrlInput).
+  function syncUrlFromParams(idx: number) {
+    const r = appState.requests[idx]
+    if (!r) return
+    const { base } = splitQuery(r.url)
+    const query = buildQueryString(r.params)
+    const nextUrl = query ? `${base}?${query}` : base
+    if (nextUrl !== r.url) setAppState('requests', idx, 'url', nextUrl)
+  }
+
   function setRow(field: 'headers' | 'params', index: number, key: keyof KeyValue, value: string | boolean) {
     const idx = activeIndex()
     if (idx < 0) return
     setAppState('requests', idx, field, index, key as any, value as any)
+    if (field === 'params') syncUrlFromParams(idx)
   }
 
   // Go's omitempty serializes an empty/nil headers-or-params slice as JSON
@@ -164,12 +212,37 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
       ...(rows ?? []),
       { key: '', value: '', enabled: true },
     ])
+    // A fresh row has no key yet, so it never contributes to the query
+    // string (buildQueryString filters empty keys, matching the backend) —
+    // this is here so a URL previously widened by a removed disabled row
+    // stays correct, not because adding a row itself changes the URL.
+    if (field === 'params') syncUrlFromParams(idx)
   }
 
   function removeRow(field: 'headers' | 'params', index: number) {
     const idx = activeIndex()
     if (idx < 0) return
     setAppState('requests', idx, field, (rows: KeyValue[] | null | undefined) => (rows ?? []).filter((_, i) => i !== index))
+    if (field === 'params') syncUrlFromParams(idx)
+  }
+
+  // The companion direction: typing a query string directly into the URL
+  // bar auto-populates the Params tab, matching Postman/Insomnia/Yaak.
+  // Guarded so it only touches params when the QUERY portion actually
+  // changed — editing the path with an empty query (the common case)
+  // would otherwise wipe out an in-progress, not-yet-keyed param row on
+  // every keystroke. Disabled rows are never reflected in the URL (see
+  // buildQueryString), so they're preserved untouched across a resync
+  // rather than being silently dropped.
+  function onUrlInput(value: string) {
+    const idx = activeIndex()
+    if (idx < 0) return
+    setAppState('requests', idx, 'url', value)
+    const { query } = splitQuery(value)
+    const current = appState.requests[idx]?.params ?? []
+    if (query === buildQueryString(current)) return
+    const disabledRows = current.filter((p) => !p.enabled)
+    setAppState('requests', idx, 'params', [...parseQueryParams(query), ...disabledRows])
   }
 
   function enabledCount(rows: KeyValue[] | undefined) {
@@ -180,6 +253,14 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
     <Show when={active()} fallback={<EmptyState />}>
       {(req) => (
         <div class="flex h-full flex-col">
+          <div class="flex items-center border-b border-edge px-2 pt-1.5">
+            <input
+              class="min-w-0 flex-1 truncate rounded bg-transparent px-1 py-0.5 text-sm font-medium text-ink-dim focus:bg-field focus:text-ink focus:outline-none"
+              value={req().name}
+              placeholder="Untitled request"
+              onInput={(e) => setAppState('requests', activeIndex(), 'name', e.currentTarget.value)}
+            />
+          </div>
           <div class="flex items-center gap-2 border-b border-edge p-2">
             <select
               class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge-strong"
@@ -206,7 +287,7 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
               class="flex-1 rounded bg-field px-2 py-1 font-mono text-sm text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
               value={req().url}
               placeholder={URL_PLACEHOLDER[req().protocol || 'http']}
-              onInput={(e) => setAppState('requests', activeIndex(), 'url', e.currentTarget.value)}
+              onInput={(e) => onUrlInput(e.currentTarget.value)}
             />
             <Show
               when={isStreamingProtocol(req().protocol || 'http', isGrpcServerStreaming(req().id))}
