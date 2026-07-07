@@ -7,6 +7,7 @@ import {
   explorerTab,
   openExplorer,
   setExplorerOpen,
+  setImportModalOpen,
   setSettingsOpen,
 } from '../lib/store'
 import { createRequest } from '../lib/data'
@@ -104,6 +105,12 @@ export default function ActivityRail() {
       <Tooltip text="New request (⌘N)">
         <button class={railButtonClasses(false)} title="New request (⌘N)" onClick={() => void createRequest()}>
           <span class="text-base leading-none">+</span>
+        </button>
+      </Tooltip>
+
+      <Tooltip text="Import cURL / OpenAPI / Postman">
+        <button class={railButtonClasses(false)} title="Import cURL / OpenAPI / Postman" onClick={() => setImportModalOpen(true)}>
+          <span class="text-base leading-none">⇩</span>
         </button>
       </Tooltip>
 
