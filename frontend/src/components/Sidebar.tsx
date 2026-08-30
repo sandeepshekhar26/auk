@@ -937,7 +937,7 @@ export default function Sidebar() {
                   <IconCollection size={28} class="text-ink-faint" />
                   <div>
                     <p class="text-sm font-medium text-ink-dim">No requests yet</p>
-                    <p class="mt-1 text-xs text-ink-muted">Create your first request, or import cURL / OpenAPI / Postman.</p>
+                    <p class="mt-1 text-xs text-ink-muted">Create your first request, or import cURL, OpenAPI, Postman, Insomnia, Bruno, or HAR.</p>
                   </div>
                   <div class="flex gap-2">
                     <button

@@ -9,6 +9,7 @@ import ShortcutSheet from './components/ShortcutSheet'
 import EnvironmentSelector from './components/EnvironmentSelector'
 import EnvironmentEditor from './components/EnvironmentEditor'
 import ImportCurlModal from './components/ImportCurlModal'
+import MigrateModal from './components/MigrateModal'
 import StreamConsole from './components/StreamConsole'
 import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
@@ -19,7 +20,7 @@ import UpdateBanner from './components/UpdateBanner'
 import TrialBadge from './components/TrialBadge'
 import { appState, closeTab, cycleTab, folderRunView, initSidebar, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals, setSettingsOpen } from './lib/store'
 import { events, wails } from './lib/wails'
-import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
+import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData, refreshEnvironments } from './lib/data'
 import { initTheme } from './lib/theme'
 import { initLicense, licenseStatus } from './lib/license'
 import { initUpdateCheck } from './lib/updater'
@@ -171,6 +172,10 @@ export default function App() {
       })
     } finally {
       markSending(requestId, false)
+      // A post-response script may have written variables into the active
+      // environment (auth-token chaining) — re-read them so the environment
+      // editor isn't showing a stale copy.
+      refreshEnvironments().catch(() => {})
       // The backend appends a history entry on any completed run (even a
       // non-2xx response) — refresh so HistoryPanel isn't stuck showing
       // stale data from whenever the app last loaded.
@@ -260,6 +265,7 @@ export default function App() {
       <ShortcutSheet />
       <EnvironmentEditor />
       <ImportCurlModal />
+      <MigrateModal />
       <StreamConsole />
       <SettingsModal />
       <MCPApprovalModal />

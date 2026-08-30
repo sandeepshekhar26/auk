@@ -1,10 +1,11 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
-import { settingsOpen, setSettingsOpen } from '../lib/store'
+import { appState, settingsOpen, setSettingsOpen } from '../lib/store'
 import { setTheme, themePref } from '../lib/theme'
 import type { ThemePref } from '../lib/theme'
 import { wails } from '../lib/wails'
 import { copyText } from '../lib/clipboard'
 import LicenseSection from './LicenseSection'
+import { MethodBadge } from './icons'
 import { UpdateSettingRow } from './UpdateBanner'
 
 interface MCPStatus {
@@ -14,6 +15,43 @@ interface MCPStatus {
   connectCommand: string
   error?: string
 }
+
+interface MockStatus {
+  running: boolean
+  port: number
+  workspaceId: string
+  routes: number
+  error?: string
+}
+
+interface MockRoute {
+  method: string
+  path: string
+  requestId: string
+  requestName: string
+  status: number
+}
+
+// StartMockServer/StopMockServer/MockServerStatus/MockServerRoutes are Go
+// bindings added in app_mockserver.go, and `mockPort` is a new AppSettings
+// field. Wails regenerates the typed wrappers in
+// frontend/wailsjs/go/main/App.{d.ts,js} (and the models) on the next `wails
+// dev`/build, at which point these are statically typed. Until that
+// regeneration runs we reach them through a locally-typed view of the
+// bindings module so tsc and the bundler stay green — same pattern as
+// ResponseViewer.tsx's saveResponseBodyBinding. See INTEGRATION NOTES.
+interface MockBindings {
+  StartMockServer(workspaceId: string, port: number): Promise<MockStatus>
+  StopMockServer(): Promise<MockStatus>
+  MockServerStatus(): Promise<MockStatus>
+  MockServerRoutes(): Promise<MockRoute[]>
+}
+
+function mockBindings(): MockBindings {
+  return wails as unknown as MockBindings
+}
+
+const DEFAULT_MOCK_PORT = 8725
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -26,6 +64,13 @@ export default function SettingsModal() {
   const [copied, setCopied] = createSignal(false)
   const [copyFailed, setCopyFailed] = createSignal(false)
   const [toggling, setToggling] = createSignal(false)
+  const [mock, setMock] = createSignal<MockStatus | null>(null)
+  const [mockRoutes, setMockRoutes] = createSignal<MockRoute[]>([])
+  const [mockPort, setMockPort] = createSignal(DEFAULT_MOCK_PORT)
+  const [mockBusy, setMockBusy] = createSignal(false)
+  const [mockError, setMockError] = createSignal('')
+  const [mockUrlCopied, setMockUrlCopied] = createSignal(false)
+  const [mockUrlCopyFailed, setMockUrlCopyFailed] = createSignal(false)
 
   // Refresh MCP status whenever the panel opens.
   createEffect(() => {
@@ -33,6 +78,65 @@ export default function SettingsModal() {
       wails.GetMCPStatus().then((s) => setMcp(s as MCPStatus)).catch(() => setMcp(null))
     }
   })
+
+  // Same for the mock server. The port input seeds from the running server
+  // when there is one, else from the remembered setting, else the default —
+  // so the number on screen is always the one Start would actually use.
+  createEffect(() => {
+    if (!settingsOpen()) return
+    void refreshMock()
+    wails
+      .GetSettings()
+      .then((s) => {
+        const saved = (s as unknown as { mockPort?: number }).mockPort
+        if (saved && saved > 0 && !mock()?.running) setMockPort(saved)
+      })
+      .catch(() => {
+        /* unreadable settings — keep the default port */
+      })
+  })
+
+  async function refreshMock() {
+    try {
+      const st = await mockBindings().MockServerStatus()
+      setMock(st)
+      if (st.running) {
+        setMockPort(st.port)
+        setMockRoutes(await mockBindings().MockServerRoutes())
+      } else {
+        setMockRoutes([])
+      }
+    } catch {
+      setMock(null)
+      setMockRoutes([])
+    }
+  }
+
+  // Start serves the ACTIVE workspace: the mock replays what that workspace
+  // recorded, so tying it to the current selection (rather than a second
+  // workspace picker in Settings) keeps "what am I serving?" unambiguous.
+  async function toggleMock() {
+    setMockBusy(true)
+    setMockError('')
+    try {
+      if (mock()?.running) {
+        setMock(await mockBindings().StopMockServer())
+        setMockRoutes([])
+        return
+      }
+      const workspaceId = appState.activeWorkspaceId
+      if (!workspaceId) {
+        setMockError('Select a workspace first.')
+        return
+      }
+      setMock(await mockBindings().StartMockServer(workspaceId, mockPort()))
+      setMockRoutes(await mockBindings().MockServerRoutes())
+    } catch (err) {
+      setMockError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setMockBusy(false)
+    }
+  }
 
   async function toggleMCP() {
     const cur = mcp()
@@ -58,6 +162,21 @@ export default function SettingsModal() {
     setTimeout(() => {
       setCopied(false)
       setCopyFailed(false)
+    }, result.ok ? 1500 : 4000)
+  }
+
+  // Same lib/clipboard path (and same visible-failure handling) as
+  // copyConnect above — navigator.clipboard rejects in the packaged
+  // WKWebView.
+  async function copyMockUrl() {
+    const st = mock()
+    if (!st?.running) return
+    const result = await copyText(`http://127.0.0.1:${st.port}`)
+    setMockUrlCopied(result.ok)
+    setMockUrlCopyFailed(!result.ok)
+    setTimeout(() => {
+      setMockUrlCopied(false)
+      setMockUrlCopyFailed(false)
     }, result.ok ? 1500 : 4000)
   }
 
@@ -177,6 +296,87 @@ export default function SettingsModal() {
                   >
                     {copyFailed() ? 'Copy failed' : copied() ? 'Copied' : 'Copy "claude mcp add" command'}
                   </button>
+                </div>
+              </Show>
+            </section>
+
+            <section>
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-medium uppercase tracking-wide text-ink-muted">Mock Server</h3>
+                <div class="flex items-center gap-2">
+                  <label class="sr-only" for="mock-port">
+                    Mock server port
+                  </label>
+                  <input
+                    id="mock-port"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    class="w-20 rounded border border-edge bg-field px-2 py-1 text-right font-mono text-xs text-ink focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+                    value={mockPort()}
+                    disabled={mock()?.running ?? false}
+                    onInput={(e) => setMockPort(Number(e.currentTarget.value) || 0)}
+                  />
+                  <button
+                    class="rounded px-2 py-1 text-xs font-medium disabled:opacity-50"
+                    classList={{
+                      'bg-accent text-accent-contrast hover:bg-accent-hover': !(mock()?.running ?? false),
+                      'bg-raised text-ink-dim hover:bg-elevated': mock()?.running ?? false,
+                    }}
+                    disabled={mockBusy()}
+                    onClick={toggleMock}
+                  >
+                    {mockBusy() ? '…' : (mock()?.running ? 'Stop' : 'Start')}
+                  </button>
+                </div>
+              </div>
+              <p class="mt-1 text-xs text-ink-muted">
+                Serve this workspace's recorded responses on localhost — point your frontend at it.
+              </p>
+
+              <Show when={mockError() || mock()?.error}>
+                <p class="mt-2 rounded border border-danger-edge bg-danger-bg/40 px-2 py-1.5 text-xs text-danger">
+                  {mockError() || mock()?.error}
+                </p>
+              </Show>
+
+              <Show when={mock()?.running}>
+                <div class="mt-2 flex flex-col gap-1.5">
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="h-1.5 w-1.5 rounded-full bg-accent" />
+                    <span class="font-mono text-ink-dim">http://127.0.0.1:{mock()!.port}</span>
+                    <span class="text-ink-faint">
+                      · {mock()!.routes} {mock()!.routes === 1 ? 'route' : 'routes'}
+                    </span>
+                  </div>
+                  <button
+                    class="self-start rounded bg-field px-2 py-1 text-[11px] hover:bg-raised"
+                    classList={{ 'text-danger': mockUrlCopyFailed(), 'text-ink-dim': !mockUrlCopyFailed() }}
+                    onClick={copyMockUrl}
+                  >
+                    {mockUrlCopyFailed() ? 'Copy failed' : mockUrlCopied() ? 'Copied' : 'Copy base URL'}
+                  </button>
+
+                  <Show
+                    when={mockRoutes().length > 0}
+                    fallback={
+                      <p class="text-[11px] text-ink-faint">
+                        No routes yet — send a request in this workspace to record one.
+                      </p>
+                    }
+                  >
+                    <ul class="max-h-40 divide-y divide-edge overflow-y-auto rounded border border-edge">
+                      <For each={mockRoutes()}>
+                        {(r) => (
+                          <li class="flex items-center gap-2 px-2 py-1" title={r.requestName}>
+                            <MethodBadge method={r.method} class="w-8 text-right" />
+                            <span class="truncate font-mono text-[11px] text-ink-dim">{r.path}</span>
+                            <span class="ml-auto shrink-0 font-mono text-[10px] text-ink-faint">{r.status}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
                 </div>
               </Show>
             </section>

@@ -6,8 +6,11 @@
 // this file's "compute once, attach a header" shape at all (it's a
 // challenge-response handshake needing the HTTP execute loop itself to
 // retry on a 401), so it isn't a case waiting to be filled in here the way
-// every other kind was. Each implemented kind is registered the same way,
-// so adding one never touches the engine.
+// every other kind was. HTTP Digest has exactly that same shape and is
+// implemented, but as a transport wrapper in internal/protocols/http
+// (digest.go) — its case below is a deliberate pass-through, not a gap.
+// Each implemented kind is registered the same way, so adding one never
+// touches the engine.
 package auth
 
 import (
@@ -93,6 +96,15 @@ func (a *Applier) Apply(ctx context.Context, cfg model.AuthConfig, req core.Reso
 			return req, fmt.Errorf("oauth1 auth config missing")
 		}
 		return applyOAuth1(*cfg.OAuth1, req, time.Now())
+	case model.AuthDigest:
+		// Deliberately a no-op, NOT an unimplemented kind. Digest is the
+		// challenge-response scheme this package's doc comment describes as a
+		// bad fit: there is no header to compute here because the reply hashes
+		// a nonce the server hasn't issued yet. It is implemented instead as a
+		// transport wrapper in internal/protocols/http (digest.go), which sees
+		// the 401 and re-sends. Passing the request through untouched is what
+		// lets that happen.
+		return req, nil
 	default:
 		return req, fmt.Errorf("auth kind %q not yet implemented", cfg.Kind)
 	}

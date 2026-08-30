@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"strings"
 	"testing"
 
 	"apitool/internal/core/model"
@@ -197,5 +198,46 @@ func TestParsePostmanNonStringCollectionVariable(t *testing.T) {
 	}
 	if vars["host"] != "localhost" {
 		t.Errorf("string collection variable host = %q", vars["host"])
+	}
+}
+
+// TestPostmanVariableConversion is the migration-critical fix: a Postman
+// export uses {{var}} everywhere, but AUK resolves only ${var}. Without
+// converting, an imported collection's {{baseUrl}} stays literal and every
+// request breaks. Dynamic vars ({{$randomInt}}) lose their $ to line up with
+// AUK's ${randomInt} template functions.
+func TestPostmanVariableConversion(t *testing.T) {
+	const collection = `{
+      "info": {"name": "Vars", "_postman_id": "x"},
+      "variable": [{"key": "baseUrl", "value": "https://{{host}}"}],
+      "item": [{
+        "name": "Get",
+        "request": {
+          "method": "GET",
+          "url": {"raw": "{{baseUrl}}/users/:id", "variable": [{"key":"id","value":"{{userId}}"}]},
+          "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+          "body": {"mode": "raw", "raw": "{\"n\": \"{{name}}\", \"r\": \"{{$randomInt}}\"}"}
+        }
+      }]
+    }`
+	res, err := Import(collection)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	req := res.Requests[0]
+	if req.URL != "${baseUrl}/users/:id" {
+		t.Errorf("URL not converted: %q", req.URL)
+	}
+	if req.Headers[0].Value != "Bearer ${token}" {
+		t.Errorf("header not converted: %q", req.Headers[0].Value)
+	}
+	if len(req.PathParams) != 1 || req.PathParams[0].Value != "${userId}" {
+		t.Errorf("path param not converted: %+v", req.PathParams)
+	}
+	if req.Body == nil || !strings.Contains(req.Body.Text, "${name}") || !strings.Contains(req.Body.Text, "${randomInt}") {
+		t.Errorf("body not converted (or dynamic var kept its $): %q", req.Body.Text)
+	}
+	if res.Environments[0].Variables[0].Value != "https://${host}" {
+		t.Errorf("env var not converted: %q", res.Environments[0].Variables[0].Value)
 	}
 }

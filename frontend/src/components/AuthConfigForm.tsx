@@ -5,6 +5,7 @@ import type { AuthKind } from '../types'
 const AUTH_KINDS: { value: AuthKind; label: string }[] = [
   { value: 'none', label: 'No Auth' },
   { value: 'basic', label: 'Basic Auth' },
+  { value: 'digest', label: 'Digest Auth' },
   { value: 'bearer', label: 'Bearer Token' },
   { value: 'apikey', label: 'API Key' },
   { value: 'jwt', label: 'JWT' },
@@ -50,6 +51,14 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
 
   function setBasic(field: 'username' | 'password', value: string) {
     setAppState('requests', props.requestIndex, 'authRef', 'basic', (prev) => ({
+      username: prev?.username ?? '',
+      password: prev?.password ?? '',
+      [field]: value,
+    }))
+  }
+
+  function setDigest(field: 'username' | 'password', value: string) {
+    setAppState('requests', props.requestIndex, 'authRef', 'digest', (prev) => ({
       username: prev?.username ?? '',
       password: prev?.password ?? '',
       [field]: value,
@@ -144,6 +153,30 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
               onInput={(e) => setBasic('password', e.currentTarget.value)}
             />
           </Field>
+        </div>
+      </Show>
+
+      <Show when={auth().kind === 'digest'}>
+        <div class="mt-3 flex max-w-sm flex-col gap-2">
+          <Field label="Username">
+            <input
+              class={inputClass}
+              value={auth().digest?.username ?? ''}
+              onInput={(e) => setDigest('username', e.currentTarget.value)}
+            />
+          </Field>
+          <Field label="Password">
+            <input
+              type="password"
+              class={inputClass}
+              value={auth().digest?.password ?? ''}
+              onInput={(e) => setDigest('password', e.currentTarget.value)}
+            />
+          </Field>
+          <p class="text-[11px] text-ink-faint">
+            RFC 7616 challenge-response: the request is sent once to collect the server's 401 challenge, then re-sent
+            authorized. MD5, SHA-256 and SHA-512-256 (plus -sess variants) with qop=auth; auth-int isn't supported.
+          </p>
         </div>
       </Show>
 

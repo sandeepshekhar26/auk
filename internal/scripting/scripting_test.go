@@ -112,8 +112,8 @@ func TestRunPreRequest_TimesOutOnInfiniteLoop(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a timeout error for an infinite loop")
 	}
-	if elapsed > scriptTimeout+2*time.Second {
-		t.Fatalf("expected the timeout to be enforced near %s, took %s", scriptTimeout, elapsed)
+	if elapsed > DefaultPreRequestTimeout+2*time.Second {
+		t.Fatalf("expected the timeout to be enforced near %s, took %s", DefaultPreRequestTimeout, elapsed)
 	}
 }
 

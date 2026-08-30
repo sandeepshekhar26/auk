@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — AUK</title>
+<meta name="description" content="AUK collects no telemetry. The app contacts a server only for licence activation and update checks; your workspace data stays on your Mac. Payments are processed by Paddle.">
+<meta name="theme-color" content="#0C0F14" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F5F7F9" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://auk.deskmcp.com/privacy.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      AUK
+    </a>
+    <nav aria-label="Main">
+      <ul class="nav-links">
+        <li><a href="index.html">Product</a></li>
+        <li><a href="index.html#pricing">Pricing</a></li>
+        <li><a href="terms.html">Terms</a></li>
+        <li><a href="privacy.html" aria-current="page">Privacy</a></li>
+        <li><a href="refund.html">Refunds</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap legal">
+
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: 1 January 2026</p>
+
+  <p>
+    This policy explains what data the AUK desktop application and the website at
+    <a href="https://auk.deskmcp.com">auk.deskmcp.com</a> collect, and what happens to it.
+    It is issued by the seller of AUK, identified by legal name in the
+    <a href="terms.html#seller">Seller clause of our Terms &amp; Conditions</a> and in the
+    footer of this page, who is the data controller for the purposes of this policy.
+  </p>
+
+  <div class="callout">
+    <p>
+      <strong>The short version.</strong> AUK contains no telemetry, no analytics, and no
+      crash reporting. Your workspaces, requests, responses, and secrets stay on your Mac.
+      The app makes network calls that you did not initiate for exactly two reasons: to
+      activate your licence, and to check GitHub for a newer release. This website is static
+      and sets no cookies. We do not sell data, and there is nothing here to sell.
+    </p>
+  </div>
+
+  <h2>1. What the app does not collect</h2>
+  <p>
+    AUK does not include usage analytics, product telemetry, session recording, crash
+    reporting, advertising identifiers, or any third-party SDK that reports back. We do not
+    know which features you use, how often you open the app, or what your requests look like.
+    This is a deliberate design decision, not a setting you have to find and switch off.
+  </p>
+
+  <h2>2. Your workspace data stays on your Mac</h2>
+  <ul>
+    <li>
+      <strong>Workspaces, requests, environments, and scripts</strong> are stored as plain
+      files on your own disk. They are never uploaded to us.
+    </li>
+    <li>
+      <strong>Responses and history</strong> — including any personal or confidential data
+      returned by the APIs you call — stay local and are never transmitted to us.
+    </li>
+    <li>
+      <strong>Secrets</strong> such as API keys, tokens, and passwords are stored in the
+      <strong>macOS keychain</strong>, managed by the operating system. We have no access to
+      the keychain and no ability to read those values.
+    </li>
+    <li>
+      <strong>Git synchronisation is yours.</strong> If you sync a workspace with git, it goes
+      to a remote <em>you</em> configure — your GitHub, GitLab, or self-hosted server. We
+      operate no sync service and are not in that path. Whatever you push is governed by that
+      provider's own terms and privacy policy.
+    </li>
+    <li>
+      <strong>The requests you send</strong> go directly from your Mac to the endpoints you
+      type in. There is no proxy of ours in between.
+    </li>
+  </ul>
+
+  <h2>3. Licence activation</h2>
+  <p>
+    When you activate a purchased licence, the app sends the licence key together with:
+  </p>
+  <ul>
+    <li>the <strong>email address</strong> associated with your purchase, so we can identify
+      the licence and re-send your key if you lose it; and</li>
+    <li>a <strong>hashed machine identifier</strong> — a one-way hash derived from your
+      device, used only to count how many of your three permitted machines are active and to
+      let you deactivate one. We do not store the underlying device identifier, and the hash
+      cannot be reversed to reveal your hardware, your name, or your location.</li>
+  </ul>
+  <p>
+    We use this data solely to issue, validate, and support your licence, and to enforce the
+    three-machine limit set out in the Terms. It is retained for as long as the licence is
+    valid plus the period required for tax and accounting records, then deleted. It is not
+    used for marketing and is not shared with anyone except as required to provide the service
+    or by law. Trial use does not require activation and does not send this data.
+  </p>
+
+  <h2>4. Update checks</h2>
+  <p>
+    The app periodically asks the public GitHub Releases API whether a newer version of AUK
+    exists. The request contains no licence data, no account data, and no information about
+    your workspaces. As with any HTTPS request, GitHub will see your IP address, the requested
+    URL, and a user agent as part of serving it; that data is handled by GitHub under
+    <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement" rel="noopener">GitHub's
+    privacy statement</a>, not by us. You can disable update checks in the app's settings.
+  </p>
+
+  <h2>5. This website</h2>
+  <p>
+    auk.deskmcp.com is a static site. It sets <strong>no cookies</strong>, runs no analytics,
+    embeds no trackers, no advertising pixels, and no social widgets. There is no login and no
+    form that collects personal data.
+  </p>
+  <p>
+    Two ordinary technical points: fonts are loaded from Google Fonts, so your browser makes a
+    request to Google's font servers (which will see your IP address and user agent) when a
+    page loads; and the static host serving this site keeps standard server access logs
+    containing IP addresses and requested URLs, retained briefly for security and operational
+    purposes.
+  </p>
+
+  <h2>6. Payments</h2>
+  <p>
+    Purchases are processed by <strong>Paddle.com</strong> as the merchant of record. When you
+    buy a licence, Paddle collects and processes the data required to complete the sale —
+    including your name, email address, billing address, country, and payment card or other
+    payment details — and handles fraud prevention and tax compliance.
+  </p>
+  <p>
+    <strong>We never see or store your card number or bank details.</strong> What we receive
+    from Paddle is limited to the information needed to fulfil the order and support you:
+    your email address, the product and licence purchased, the order reference, and your
+    billing country for tax records.
+  </p>
+  <p>
+    Paddle's handling of your data is governed by the
+    <a href="https://www.paddle.com/legal/privacy" rel="noopener">Paddle Privacy Policy</a>.
+  </p>
+
+  <h2>7. Email correspondence</h2>
+  <p>
+    If you email us for support, a refund, or any other reason, we hold your message and email
+    address for as long as needed to deal with it and to keep a record of the conversation. We
+    do not add you to a mailing list and do not send marketing email without your explicit
+    request.
+  </p>
+
+  <h2>8. Legal basis and sharing</h2>
+  <p>
+    Where data protection law requires a legal basis, we rely on <em>performance of a
+    contract</em> (issuing and validating your licence, providing support) and on our
+    <em>legitimate interests</em> in preventing licence abuse and keeping the software secure.
+  </p>
+  <p>
+    We share personal data only with the service providers needed to run this business —
+    principally Paddle for payments and the provider that hosts this website — and only to the
+    extent required, or where we are legally obliged to disclose it. We do not sell personal
+    data, and we do not share it with advertisers or data brokers.
+  </p>
+
+  <h2>9. Your rights</h2>
+  <p>
+    Subject to applicable law, you may ask us to give you a copy of the personal data we hold
+    about you, correct it if it is wrong, delete it, restrict or object to our use of it, or
+    provide it in a portable format. Email
+    <a href="mailto:skumar5190@gmail.com">skumar5190@gmail.com</a> and we will respond within
+    30 days. Because we hold so little — essentially your email address, licence records, and
+    any correspondence — such requests are usually straightforward.
+  </p>
+  <p>
+    Requests concerning your <em>payment</em> data should go to Paddle, which is the
+    controller for that data as merchant of record. If you believe we have mishandled your
+    data you may also complain to your local data protection authority.
+  </p>
+
+  <h2>10. Children</h2>
+  <p>
+    AUK is a developer tool intended for professional use and is not directed at children
+    under 16. We do not knowingly collect data from children.
+  </p>
+
+  <h2>11. Changes to this policy</h2>
+  <p>
+    If our practices change we will update this page and revise the "Last updated" date above.
+    Material changes affecting how we handle personal data will be described here rather than
+    made silently.
+  </p>
+
+  <h2>12. Contact</h2>
+  <p>
+    Privacy questions and data requests:
+    <a href="mailto:skumar5190@gmail.com">skumar5190@gmail.com</a>.
+  </p>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <ul class="foot-links">
+      <li><a href="index.html">Product</a></li>
+      <li><a href="index.html#pricing">Pricing</a></li>
+      <li><a href="terms.html">Terms &amp; Conditions</a></li>
+      <li><a href="privacy.html">Privacy Policy</a></li>
+      <li><a href="refund.html">Refund Policy</a></li>
+      <li><a href="mailto:skumar5190@gmail.com">Contact</a></li>
+    </ul>
+    <!-- LEGAL-NAME (2 of 2): footer copyright line, repeated verbatim on every page. -->
+    <p>&copy; 2026 Sandeep Kumar &middot; AUK is sold via Paddle.com as merchant of record.</p>
+    <p class="small">Support and enquiries: <a href="mailto:skumar5190@gmail.com">skumar5190@gmail.com</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

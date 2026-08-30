@@ -1,40 +1,106 @@
-// Command apitool-cli is the headless runner: the concrete proof that
+// Command apitool-cli is AUK's headless runner: the concrete proof that
 // internal/core has zero Wails dependencies (docs/02-architecture.md §1 —
-// "the CLI builds with zero Wails in the dependency tree"). It builds the
-// exact same core.Engine that app.go wires up for the GUI and runs one
-// request through the identical RunRequest chokepoint (origin "cli"), which
-// is what makes it usable in CI as a smoke-test/regression runner
-// (docs/01-feature-roadmap.md "Headless CLI runner").
+// "the CLI builds with zero Wails in the dependency tree"), and the thing
+// that lets AUK FAIL A CI BUILD.
+//
+// It builds the exact same engine app.go wires up for the GUI (via
+// internal/appcore — one construction path, not a fork) and runs requests
+// through the identical RunRequest chokepoint with origin "cli". Beyond the
+// original single-request smoke test it can now run a whole folder or
+// workspace, iterate over a CSV/JSON data file, and emit JUnit/JSON reports —
+// see docs/09-ci-runner.md.
 package main
 
 import (
-	"context"
-	"flag"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
-	"apitool/internal/assert"
-	"apitool/internal/auth"
+	"apitool/internal/appcore"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
-	graphqlprotocol "apitool/internal/protocols/graphql"
-	grpcprotocol "apitool/internal/protocols/grpc"
-	httpprotocol "apitool/internal/protocols/http"
-	sseprotocol "apitool/internal/protocols/sse"
-	wsprotocol "apitool/internal/protocols/ws"
+	"apitool/internal/runner"
 	"apitool/internal/storage"
-	"apitool/internal/templating"
 )
+
+const usageText = `apitool-cli — AUK's headless API test runner
+
+USAGE
+  apitool-cli run           <requestID>   [flags]   run one request
+  apitool-cli run-folder    <folderID>    [flags]   run a folder and its subfolders
+  apitool-cli run-workspace [workspaceID] [flags]   run every request in a workspace
+
+FLAGS
+  --workspace-dir DIR    workspace root (default: $AUK_WORKSPACE_DIR, else the current directory)
+  --env ID               environment to resolve ${variables} against
+  --data FILE            CSV or JSON data file — run the target once per row
+  --iterations N         repeat count (with --data: stop after N rows)
+  --reporter NAME        cli | junit | json — repeatable
+  --reporter-out PATH    where to write the preceding --reporter (or NAME=PATH); default stdout
+  --bail                 stop at the first failed request
+  --timeout DUR          per-request timeout (default 60s; 0 disables)
+  --delay DUR            pause between requests (e.g. 250ms)
+
+EXIT CODES
+  0  every request passed
+  1  at least one request failed a test, assertion, script, or transport
+  2  the run could not start or complete (bad flags, unknown id, bad data file)
+
+Full documentation: docs/09-ci-runner.md`
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "apitool-cli:", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// run dispatches the subcommand. Returns a *usageError for anything that
+// stopped the run from starting (exit 2) and a plain error for a run that
+// started and failed (exit 1) — see exitCode.
+func run(args []string) error {
+	if len(args) == 0 {
+		return usagef("%s", usageText)
+	}
+	switch args[0] {
+	case "run":
+		return runRequestCmd(args[1:])
+	case "run-folder":
+		return runFolderCmd(args[1:])
+	case "run-workspace":
+		return runWorkspaceCmd(args[1:])
+	case "help", "-h", "--help":
+		fmt.Println(usageText)
+		return nil
+	default:
+		return usagef("unknown command %q\n\n%s", args[0], usageText)
+	}
+}
+
+// usageError marks a failure that happened BEFORE any request ran — a bad
+// flag, an unknown folder id, an unreadable data file. CI treats it
+// differently from a genuine test failure (exit 2 vs exit 1): the build is
+// broken, not the API.
+type usageError struct{ err error }
+
+func (e *usageError) Error() string { return e.err.Error() }
+func (e *usageError) Unwrap() error { return e.err }
+
+func usagef(format string, a ...any) error { return &usageError{err: fmt.Errorf(format, a...)} }
+
+// exitCode maps an error to the documented process exit code.
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ue *usageError
+	if errors.As(err, &ue) {
+		return 2
+	}
+	return 1
 }
 
 // reorderFlagsFirst moves any token matching one of knownFlags (in
@@ -44,10 +110,29 @@ func main() {
 // `run --workspace-dir=X <requestID>` behave identically, which
 // flag.FlagSet.Parse alone does not support (it stops consuming flags at
 // the first non-flag token).
+//
+// Every flag named here is assumed to TAKE A VALUE. Boolean flags must go
+// through reorderFlags instead — see the boolFlags argument there for why.
 func reorderFlagsFirst(args []string, knownFlags ...string) []string {
-	isKnown := make(map[string]bool, len(knownFlags))
-	for _, f := range knownFlags {
-		isKnown[f] = true
+	return reorderFlags(args, knownFlags, nil)
+}
+
+// reorderFlags is the arity-aware reorderer. A boolean flag (`--bail`) takes
+// NO value, so treating it like a value flag would swallow the following
+// token — turning `run-folder --bail <folderID> --env=x` into
+// `--bail <folderID>` plus a silently-dropped `--env`, which is the exact
+// class of bug reorderFlagsFirst was written to prevent.
+func reorderFlags(args []string, valueFlags, boolFlags []string) []string {
+	takesValue := make(map[string]bool, len(valueFlags))
+	for _, f := range valueFlags {
+		takesValue[f] = true
+	}
+	known := make(map[string]bool, len(valueFlags)+len(boolFlags))
+	for _, f := range valueFlags {
+		known[f] = true
+	}
+	for _, f := range boolFlags {
+		known[f] = true
 	}
 
 	var flags, positional []string
@@ -58,12 +143,12 @@ func reorderFlagsFirst(args []string, knownFlags ...string) []string {
 		}
 		name := strings.TrimLeft(args[i], "-")
 		bare, _, hasValueInline := strings.Cut(name, "=")
-		if !isKnown[bare] {
+		if !known[bare] {
 			positional = append(positional, args[i])
 			continue
 		}
 		flags = append(flags, args[i])
-		if !hasValueInline && i+1 < len(args) {
+		if takesValue[bare] && !hasValueInline && i+1 < len(args) {
 			i++
 			flags = append(flags, args[i])
 		}
@@ -71,122 +156,35 @@ func reorderFlagsFirst(args []string, knownFlags ...string) []string {
 	return append(flags, positional...)
 }
 
-func run(args []string) error {
-	if len(args) == 0 || args[0] != "run" {
-		return fmt.Errorf("usage: apitool-cli run <requestID> [--workspace-dir=DIR] [--env=ENVIRONMENT_ID]")
-	}
-
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	workspaceDir := fs.String("workspace-dir", "", "workspace root directory (defaults to the current directory)")
-	envID := fs.String("env", "", "environment id to resolve variables against")
-	// Go's flag.Parse stops at the first non-flag token, so a natural
-	// invocation like `run <requestID> --workspace-dir=X` would silently
-	// drop the flag. reorderFlagsFirst moves recognized flags (and their
-	// values) ahead of positional args so flag order never matters.
-	if err := fs.Parse(reorderFlagsFirst(args[1:], "workspace-dir", "env")); err != nil {
-		return err
-	}
-
-	requestID := fs.Arg(0)
-	if requestID == "" {
-		return fmt.Errorf("usage: apitool-cli run <requestID> [--workspace-dir=DIR] [--env=ENVIRONMENT_ID]")
-	}
-
-	dir := *workspaceDir
-	if dir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("determine working directory: %w", err)
-		}
-		dir = wd
-	}
-
-	store, err := newStore(dir)
-	if err != nil {
-		return fmt.Errorf("open workspace store at %q: %w", dir, err)
-	}
-	engine := buildEngine(store)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	sessionID := uuid.NewString()
-	resp, runErr := engine.RunRequest(ctx, sessionID, requestID, *envID, "cli", core.NoopSink{})
-
-	printResponse(resp)
-
-	return exitError(requestID, resp, runErr)
-}
-
-// buildEngine wires up the same core.Engine shape app.go builds for the GUI
-// (docs/02-architecture.md §1/§3 — GUI, CLI, and MCP all construct and drive
-// the identical headless core.Engine). core.Engine and templating.Engine
-// reference each other (the templater needs the engine as its ChainResolver
-// for response()-style refs; the engine needs a Templater at construction),
-// so the engine is built with a nil Templater first and wired in afterwards
-// via the exported field, matching the pattern chaining.go documents.
-func buildEngine(store core.Store) *core.Engine {
-	engine := core.NewEngine(store, nil, auth.New(), nil)
-	engine.Templater = templating.New(engine)
-	engine.Asserter = cliAsserter{}
-	engine.RegisterProtocol(httpprotocol.New())
-	engine.RegisterProtocol(wsprotocol.New())
-	engine.RegisterProtocol(sseprotocol.New())
-	engine.RegisterProtocol(graphqlprotocol.New())
-	engine.RegisterProtocol(grpcprotocol.New())
-	return engine
-}
-
-type cliAsserter struct{}
-
-func (cliAsserter) Evaluate(a []model.Assertion, resp model.ResponseData) []model.AssertionResult {
-	return assert.Evaluate(a, resp)
-}
-
 // exitError turns a completed RunRequest call into the error (if any) that
-// should make the CLI process exit non-zero: a hard error from the engine,
-// or an HTTP status >= 400, which is what makes this usable as a CI
-// smoke-test/regression gate (docs/01-feature-roadmap.md "Headless CLI
-// runner").
+// should make the CLI process exit non-zero. It is a thin adapter over
+// runner.Verdict so the single-request path, a folder run's ✓/✗ column, and
+// the JUnit failure count can never disagree about what "failed" means.
 func exitError(requestID string, resp model.ResponseData, runErr error) error {
-	if runErr != nil {
-		return fmt.Errorf("run request %q: %w", requestID, runErr)
-	}
-	// Assertions are the primary CI gate: any failed assertion fails the run,
-	// even on a 2xx response (a 200 with the wrong body is still a failure).
-	if len(resp.AssertionResults) > 0 && !assert.AllPassed(resp.AssertionResults) {
-		var failed int
-		for _, r := range resp.AssertionResults {
-			if !r.Passed {
-				failed++
-			}
-		}
-		return fmt.Errorf("request %q: %d/%d assertion(s) failed", requestID, failed, len(resp.AssertionResults))
-	}
-	if resp.Status >= 400 {
-		return fmt.Errorf("request %q returned status %d", requestID, resp.Status)
+	if passed, reason := runner.Verdict(resp, runErr); !passed {
+		return fmt.Errorf("request %q failed: %s", requestID, reason)
 	}
 	return nil
 }
 
-// newStore opens the git-friendly, YAML-file-backed storage.FileStore
-// rooted at dir, matching --workspace-dir's contract: `apitool-cli run`
-// reads and runs a real request out of the same on-disk workspace format
-// the GUI reads and writes (docs/02-architecture.md §1 — GUI and CLI share
-// one storage format, not just one engine). An empty/fresh dir is seeded
-// with one runnable demo request so the CLI is usable standalone, mirroring
-// app.go's first-run seeding.
-func newStore(dir string) (core.Store, error) {
-	store, err := storage.NewFileStore(dir)
+// openWorkspace opens dir through internal/appcore — the SAME engine
+// construction the GUI and the MCP server use, so a request behaves
+// identically whether a human clicked Send or CI ran it (that includes
+// post-response scripts, which is what produces the test() results a CI
+// report is made of). An empty/fresh dir is seeded with one runnable demo
+// request so the CLI is usable standalone, mirroring app.go's first-run
+// seeding.
+func openWorkspace(dir string) (*core.Engine, *storage.FileStore, error) {
+	engine, store, err := appcore.NewEngine(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(store.ListWorkspaces()) == 0 {
 		if _, err := seedDemoData(store, "https://httpbin.org/get"); err != nil {
-			return nil, fmt.Errorf("seed demo workspace: %w", err)
+			return nil, nil, fmt.Errorf("seed demo workspace: %w", err)
 		}
 	}
-	return store, nil
+	return engine, store, nil
 }
 
 // seedDemoData gives a fresh/empty workspace directory a runnable request,

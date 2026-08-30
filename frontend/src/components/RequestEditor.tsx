@@ -13,7 +13,7 @@ import GrpcEditor, { METHOD_HEADER } from './GrpcEditor'
 import AuthConfigForm from './AuthConfigForm'
 import AssertionEditor from './AssertionEditor'
 import PerfPanel from './PerfPanel'
-import ScriptEditor from './ScriptEditor'
+import ScriptEditor, { type ScriptField } from './ScriptEditor'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
@@ -111,6 +111,14 @@ function parsePathParamNames(url: string): string[] {
   return names
 }
 
+// The Script tab holds BOTH of a request's scripts; this is the sub-toggle
+// between them. Same editor, same sandbox — they differ in when they run and
+// what they can reach (see docs/08-scripting.md).
+const SCRIPT_PANES: { id: ScriptField; label: string }[] = [
+  { id: 'preRequestScript', label: 'Pre-request' },
+  { id: 'postResponseScript', label: 'Post-response' },
+]
+
 type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'script' | 'assert' | 'perf'
 const TABS: { id: EditorTab; label: string }[] = [
   { id: 'params', label: 'Params' },
@@ -130,6 +138,7 @@ export default function RequestEditor(props: {
   onCancel?: (id: string) => void
 }) {
   const [tab, setTab] = createSignal<EditorTab>('params')
+  const [scriptPane, setScriptPane] = createSignal<ScriptField>('preRequestScript')
   const [composeText, setComposeText] = createSignal('')
   // Description/notes area visibility. Opens automatically for a request that
   // already has notes so they're not hidden, but stays a manual toggle
@@ -519,7 +528,13 @@ export default function RequestEditor(props: {
                   <Show when={t.id === 'auth' && req().authRef && req().authRef!.kind !== 'none'}>
                     <span class="ml-1 text-accent-fg">●</span>
                   </Show>
-                  <Show when={t.id === 'script' && (req().preRequestScript?.trim().length ?? 0) > 0}>
+                  <Show
+                    when={
+                      t.id === 'script' &&
+                      ((req().preRequestScript?.trim().length ?? 0) > 0 ||
+                        (req().postResponseScript?.trim().length ?? 0) > 0)
+                    }
+                  >
                     <span class="ml-1 text-accent-fg">●</span>
                   </Show>
                   <Show when={t.id === 'assert' && (req().assertions?.length ?? 0) > 0}>
@@ -598,13 +613,44 @@ export default function RequestEditor(props: {
             </Show>
             <Show when={tab() === 'script'}>
               <div class="flex h-full flex-col overflow-hidden">
-                <p class="border-b border-edge px-2 py-1.5 text-[11px] text-ink-faint">
-                  Runs after templating and auth, right before Send. Read <code class="text-ink-dim">ctx.request</code>{' '}
-                  (method/url/headers/body); call <code class="text-ink-dim">ctx.setHeader(name, value)</code> to
-                  add or override a header.
-                </p>
+                <div class="flex items-center gap-1 border-b border-edge px-2 py-1">
+                  <For each={SCRIPT_PANES}>
+                    {(p) => (
+                      <button
+                        class="rounded px-2 py-1 text-xs font-medium"
+                        classList={{
+                          'bg-raised text-ink': scriptPane() === p.id,
+                          'text-ink-muted hover:text-ink-dim': scriptPane() !== p.id,
+                        }}
+                        onClick={() => setScriptPane(p.id)}
+                      >
+                        {p.label}
+                        <Show when={(req()[p.id]?.trim().length ?? 0) > 0}>
+                          <span class="ml-1 text-accent-fg">●</span>
+                        </Show>
+                      </button>
+                    )}
+                  </For>
+                </div>
+                <Show when={scriptPane() === 'preRequestScript'}>
+                  <p class="border-b border-edge px-2 py-1.5 text-[11px] text-ink-faint">
+                    Runs after templating and auth, right before Send. Read <code class="text-ink-dim">ctx.request</code>{' '}
+                    (method/url/headers/body); call <code class="text-ink-dim">ctx.setHeader(name, value)</code> to add or
+                    override a header, <code class="text-ink-dim">vars.get/set/unset</code> to read or write environment
+                    variables, <code class="text-ink-dim">console.log</code> to trace.
+                  </p>
+                </Show>
+                <Show when={scriptPane() === 'postResponseScript'}>
+                  <p class="border-b border-edge px-2 py-1.5 text-[11px] text-ink-faint">
+                    Runs once the response arrives. <code class="text-ink-dim">test(name, fn)</code> with{' '}
+                    <code class="text-ink-dim">expect(...)</code> to assert against{' '}
+                    <code class="text-ink-dim">response.status/headers/body/json()</code>; save a value for the next
+                    request with <code class="text-ink-dim">vars.set('token', response.json().token)</code> and use it as{' '}
+                    <code class="text-ink-dim">{'${token}'}</code>.
+                  </p>
+                </Show>
                 <div class="flex-1 overflow-hidden">
-                  <ScriptEditor requestIndex={activeIndex()} />
+                  <ScriptEditor requestIndex={activeIndex()} field={scriptPane()} />
                 </div>
               </div>
             </Show>

@@ -7,7 +7,7 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { unifiedMergeView } from '@codemirror/merge'
 import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
-import type { Assertion, AssertionResult, KeyValue, RedirectHop, ResponseData, TimingBreakdown } from '../types'
+import type { Assertion, AssertionResult, KeyValue, RedirectHop, ResponseData, TestResult, TimingBreakdown } from '../types'
 import { appState, setLoadError } from '../lib/store'
 import { wails } from '../lib/wails'
 import CopyAsMenu from './CopyAsMenu'
@@ -317,6 +317,12 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
             // JSON null, not [] — so this can't be assumed non-null the way
             // a real HTTP/GraphQL response's headers always are.
             const headers = () => res().headers ?? []
+            // Captured console.log output from the post-response script.
+            // Read defensively off the response rather than through the
+            // ResponseData type: the Go field that carries it is pending
+            // (see INTEGRATION NOTES in docs/08-scripting.md), and this
+            // renders the moment it lands without another change here.
+            const scriptLogs = (): string[] => (res() as { scriptLogs?: string[] | null }).scriptLogs ?? []
             return (
             <div class="flex h-full flex-col">
               <div class="flex items-center gap-3 border-b border-edge p-2 text-xs">
@@ -361,6 +367,18 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 <div class="border-b border-danger-edge bg-danger-bg/40 px-3 py-2 text-xs text-danger">{res().error}</div>
               </Show>
 
+              {/* A post-response script that could not RUN — syntax error,
+                  timeout, or a throw outside a test() — is a FAILED run, not
+                  a silent pass (ResponseData.Passed() is false for it). It
+                  gets the same prominence as a transport error rather than
+                  being folded in among the individual test rows, because no
+                  test result below can be trusted to be complete. */}
+              <Show when={res().scriptError}>
+                <div class="border-b border-danger-edge bg-danger-bg/40 px-3 py-2 text-xs text-danger">
+                  <span class="font-semibold">Script error</span> — {res().scriptError}
+                </div>
+              </Show>
+
               <Show when={(res().assertionResults?.length ?? 0) > 0}>
                 {(() => {
                   const results = (): AssertionResult[] => res().assertionResults ?? []
@@ -393,6 +411,61 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                     </details>
                   )
                 })()}
+              </Show>
+
+              {/* test() results from the post-response script, alongside
+                  the declarative assertions above: two ways of writing the
+                  same kind of check, one shared verdict. */}
+              <Show when={(res().testResults?.length ?? 0) > 0}>
+                {(() => {
+                  const results = (): TestResult[] => res().testResults ?? []
+                  const allPassed = () => results().every((r) => r.passed)
+                  const passCount = () => results().filter((r) => r.passed).length
+                  return (
+                    <details class="border-b border-edge" open>
+                      <summary class="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-xs">
+                        <span
+                          class="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                          classList={{ 'bg-accent text-accent-contrast': allPassed(), 'bg-danger text-accent-contrast': !allPassed() }}
+                        >
+                          {allPassed() ? 'TESTS PASSED' : 'TESTS FAILED'}
+                        </span>
+                        <span class="text-ink-muted">
+                          {passCount()}/{results().length} passed
+                        </span>
+                      </summary>
+                      <div class="flex flex-col gap-0.5 px-2 pb-2">
+                        <For each={results()}>
+                          {(r) => (
+                            <div class="flex items-start gap-2 font-mono text-[11px]">
+                              <span classList={{ 'text-accent-fg': r.passed, 'text-danger': !r.passed }}>{r.passed ? '✓' : '✗'}</span>
+                              <span class="text-ink-dim">{r.name || '(unnamed test)'}</span>
+                              {/* The failure message is the whole point of a
+                                  test — never truncated, always wrapped. */}
+                              <Show when={!r.passed && r.error}>
+                                <span class="min-w-0 flex-1 whitespace-pre-wrap break-words text-danger">{r.error}</span>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </details>
+                  )
+                })()}
+              </Show>
+
+              <Show when={scriptLogs().length > 0}>
+                <details class="border-b border-edge">
+                  <summary class="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-xs">
+                    <span class="rounded bg-raised px-1.5 py-0.5 text-[10px] font-semibold text-ink-dim">CONSOLE</span>
+                    <span class="text-ink-muted">{scriptLogs().length} lines</span>
+                  </summary>
+                  <div class="flex flex-col gap-0.5 px-2 pb-2">
+                    <For each={scriptLogs()}>
+                      {(line) => <div class="whitespace-pre-wrap break-words font-mono text-[11px] text-ink-dim">{line}</div>}
+                    </For>
+                  </div>
+                </details>
               </Show>
 
               <div class="flex items-center gap-1 border-b border-edge px-2 py-1">

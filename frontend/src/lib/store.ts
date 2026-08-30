@@ -172,6 +172,7 @@ export function setSidebarMode(mode: SidebarMode): void {
 // EnvironmentEditor itself) can toggle the same panel without prop drilling.
 export const [environmentEditorOpen, setEnvironmentEditorOpen] = createSignal(false)
 export const [importModalOpen, setImportModalOpen] = createSignal(false)
+export const [migrateModalOpen, setMigrateModalOpen] = createSignal(false)
 export const [shortcutSheetOpen, setShortcutSheetOpen] = createSignal(false)
 export const [streamConsoleOpen, setStreamConsoleOpen] = createSignal(false)
 export const [settingsOpen, setSettingsOpen] = createSignal(false)

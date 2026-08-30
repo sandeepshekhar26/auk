@@ -47,6 +47,10 @@ export interface RequestDef {
   // {method,url,headers,body} to read, ctx.setHeader(name, value) to
   // add/override a header. Empty/absent skips scripting entirely.
   preRequestScript?: string
+  // JS run AFTER the response: test()/expect() assertions plus the ability to
+  // write variables back to the environment (auth-token chaining). See
+  // PostResponseScript in internal/core/model/model.go.
+  postResponseScript?: string
   // Per-request transport settings (client cert for mTLS, custom CA, or skip
   // verify) — orthogonal to authRef, since a request can need a client
   // certificate at the TLS layer independent of its Authorization scheme.
@@ -154,7 +158,7 @@ export interface RequestBody {
   graphqlVariables?: string
 }
 
-export type AuthKind = 'none' | 'basic' | 'bearer' | 'apikey' | 'jwt' | 'oauth2' | 'awsSigV4' | 'oauth1'
+export type AuthKind = 'none' | 'basic' | 'bearer' | 'apikey' | 'jwt' | 'oauth2' | 'awsSigV4' | 'oauth1' | 'digest'
 
 export interface AuthConfig {
   kind: AuthKind
@@ -165,6 +169,7 @@ export interface AuthConfig {
   oauth2?: { clientId: string; clientSecret: string; tokenUrl: string; scopes?: string[] }
   awsSigV4?: { accessKeyId: string; secretAccessKey: string; region: string; service: string; sessionToken?: string }
   oauth1?: { consumerKey: string; consumerSecret: string; token?: string; tokenSecret?: string }
+  digest?: DigestAuth | null
 }
 
 export interface Environment {
@@ -187,6 +192,14 @@ export interface ResponseData {
   timestamp: string
   error?: string
   assertionResults?: AssertionResult[]
+  // Outcomes of test() calls in the post-response script (see TestResult in
+  // internal/core/model/assert.go).
+  testResults?: TestResult[] | null
+  // console.* output captured from the post-response script.
+  scriptLogs?: string[] | null
+  // Set when the post-response script itself failed to run — a script that
+  // can't run is a FAILED run, not a silent pass.
+  scriptError?: string
   // Per-phase breakdown for the FINAL hop (nil for non-HTTP protocols). A
   // phase reading 0 was legitimately skipped (e.g. TLS on plain HTTP, DNS
   // on a reused connection), not unmeasured.
@@ -310,4 +323,15 @@ export interface CommandItem {
   shortcut?: string
   group: 'navigation' | 'action' | 'request'
   run: () => void
+}
+
+export interface TestResult {
+  name: string
+  passed: boolean
+  error?: string
+}
+
+export interface DigestAuth {
+  username: string
+  password: string
 }

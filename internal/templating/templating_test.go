@@ -413,3 +413,150 @@ func TestPrompt(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveAuthTemplatesFieldsAndDoesNotMutate proves the auth-chaining
+// unlock: a `${token}` in the Auth config resolves against the environment,
+// and the stored *AuthConfig (a pointer into the store) is NOT mutated.
+//
+// It also pins the scoping rule: ONLY the sub-struct matching auth.Kind is
+// templated. The Auth tab preserves the sub-objects of kinds you switched
+// away from, so an inactive Basic block rides along on a Bearer request; it
+// must be carried through verbatim (and still deep-copied), never resolved.
+func TestResolveAuthTemplatesFields(t *testing.T) {
+	e := New(nil)
+	env := &model.Environment{Variables: []model.KeyValue{
+		{Key: "token", Value: "sk-abc-123", Enabled: true},
+		{Key: "user", Value: "ada", Enabled: true},
+	}}
+	stored := &model.AuthConfig{
+		Kind:   model.AuthBearer,
+		Bearer: &model.BearerAuth{Token: "${token}"},
+		Basic:  &model.BasicAuth{Username: "${user}", Password: "static"},
+	}
+	req := model.RequestDef{WorkspaceID: "w1"}
+
+	out, err := e.ResolveAuth(context.Background(), req, env, nil, stored)
+	if err != nil {
+		t.Fatalf("ResolveAuth: %v", err)
+	}
+	if out.Bearer.Token != "sk-abc-123" {
+		t.Errorf("bearer token not resolved: %q", out.Bearer.Token)
+	}
+	if out.Basic.Username != "${user}" || out.Basic.Password != "static" {
+		t.Errorf("the INACTIVE basic block must pass through untemplated, got %+v", out.Basic)
+	}
+	// The stored config must be untouched — it's a pointer into the store.
+	if stored.Bearer.Token != "${token}" {
+		t.Errorf("stored bearer token was MUTATED to %q — must stay ${token}", stored.Bearer.Token)
+	}
+	if out.Bearer == stored.Bearer {
+		t.Error("resolved Bearer aliases the stored Bearer pointer — must be a copy")
+	}
+	if out.Basic == stored.Basic {
+		t.Error("the inactive Basic aliases the stored Basic pointer — untemplated still means copied")
+	}
+}
+
+// TestResolveAuth_InactiveBlockWithMissingVariableDoesNotFail is the [MAJOR]
+// finding: ResolveAuth used to walk EVERY non-nil sub-struct, and any eval
+// error there became a hard "resolve auth templates:" failure in the engine.
+// The Auth tab preserves the sub-objects of kinds you switched away from, so a
+// request that once used Basic still carries `${legacyPassword}` — and
+// deleting that variable aborted every send of a request now using Bearer.
+func TestResolveAuth_InactiveBlockWithMissingVariableDoesNotFail(t *testing.T) {
+	e := New(nil)
+	env := &model.Environment{Variables: []model.KeyValue{
+		{Key: "token", Value: "sk-live", Enabled: true},
+		// legacyPassword was deleted from the environment.
+	}}
+	stored := &model.AuthConfig{
+		Kind:   model.AuthBearer,
+		Bearer: &model.BearerAuth{Token: "${token}"},
+		Basic:  &model.BasicAuth{Username: "old", Password: "${legacyPassword}"},
+	}
+
+	out, err := e.ResolveAuth(context.Background(), model.RequestDef{WorkspaceID: "w1"}, env, nil, stored)
+	if err != nil {
+		t.Fatalf("an INACTIVE auth block referencing a missing variable must not fail the send: %v", err)
+	}
+	if out.Bearer.Token != "sk-live" {
+		t.Errorf("the ACTIVE kind must still resolve, got %q", out.Bearer.Token)
+	}
+	if out.Basic.Password != "${legacyPassword}" {
+		t.Errorf("the inactive block must pass through verbatim, got %q", out.Basic.Password)
+	}
+}
+
+// The mirror image: the ACTIVE kind's unresolvable reference is still an error,
+// because that one really does mean the request cannot be sent correctly.
+func TestResolveAuth_ActiveBlockWithMissingVariableStillFails(t *testing.T) {
+	e := New(nil)
+	stored := &model.AuthConfig{
+		Kind:   model.AuthBearer,
+		Bearer: &model.BearerAuth{Token: "${missingToken}"},
+	}
+	if _, err := e.ResolveAuth(context.Background(), model.RequestDef{WorkspaceID: "w1"}, nil, nil, stored); err == nil {
+		t.Fatal("an unresolvable reference in the ACTIVE auth kind must still be reported")
+	}
+}
+
+// Every kind gets the same treatment, so this can't rot as kinds are added:
+// whichever kind is active resolves, and the seven riding along do not.
+func TestResolveAuth_OnlyTheActiveKindIsTemplated(t *testing.T) {
+	e := New(nil)
+	env := &model.Environment{Variables: []model.KeyValue{{Key: "v", Value: "RESOLVED", Enabled: true}}}
+	full := func() *model.AuthConfig {
+		return &model.AuthConfig{
+			Basic:    &model.BasicAuth{Password: "${v}"},
+			Bearer:   &model.BearerAuth{Token: "${v}"},
+			APIKey:   &model.APIKeyAuth{Value: "${v}"},
+			JWT:      &model.JWTAuth{Secret: "${v}"},
+			OAuth2:   &model.OAuth2Auth{ClientSecret: "${v}"},
+			AWSSigV4: &model.AWSSigV4Auth{SecretAccessKey: "${v}"},
+			OAuth1:   &model.OAuth1Auth{ConsumerSecret: "${v}"},
+			Digest:   &model.DigestAuth{Password: "${v}"},
+		}
+	}
+	for _, tc := range []struct {
+		kind   model.AuthKind
+		active func(*model.AuthConfig) string
+	}{
+		{model.AuthBasic, func(a *model.AuthConfig) string { return a.Basic.Password }},
+		{model.AuthBearer, func(a *model.AuthConfig) string { return a.Bearer.Token }},
+		{model.AuthAPIKey, func(a *model.AuthConfig) string { return a.APIKey.Value }},
+		{model.AuthJWT, func(a *model.AuthConfig) string { return a.JWT.Secret }},
+		{model.AuthOAuth2, func(a *model.AuthConfig) string { return a.OAuth2.ClientSecret }},
+		{model.AuthAWSSigV4, func(a *model.AuthConfig) string { return a.AWSSigV4.SecretAccessKey }},
+		{model.AuthOAuth1, func(a *model.AuthConfig) string { return a.OAuth1.ConsumerSecret }},
+		{model.AuthDigest, func(a *model.AuthConfig) string { return a.Digest.Password }},
+	} {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			stored := full()
+			stored.Kind = tc.kind
+			out, err := e.ResolveAuth(context.Background(), model.RequestDef{WorkspaceID: "w1"}, env, nil, stored)
+			if err != nil {
+				t.Fatalf("ResolveAuth: %v", err)
+			}
+			if got := tc.active(out); got != "RESOLVED" {
+				t.Errorf("the active %s field did not resolve: %q", tc.kind, got)
+			}
+			// Count how many of the eight still hold the literal template:
+			// seven inactive ones must, and the stored config must be intact.
+			literals := 0
+			for _, got := range []string{
+				out.Basic.Password, out.Bearer.Token, out.APIKey.Value, out.JWT.Secret,
+				out.OAuth2.ClientSecret, out.AWSSigV4.SecretAccessKey, out.OAuth1.ConsumerSecret, out.Digest.Password,
+			} {
+				if got == "${v}" {
+					literals++
+				}
+			}
+			if literals != 7 {
+				t.Errorf("expected exactly 7 untouched inactive blocks, got %d", literals)
+			}
+			if stored.Bearer.Token != "${v}" || stored.Digest.Password != "${v}" {
+				t.Errorf("the stored config was mutated: %+v", stored)
+			}
+		})
+	}
+}

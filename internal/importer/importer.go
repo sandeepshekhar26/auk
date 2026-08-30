@@ -1,8 +1,8 @@
-// Package importer converts external formats (cURL, OpenAPI, Postman) into
-// the app's own request model. Single-request formats use ParseCurl;
-// collection formats (OpenAPI, Postman) return an ImportResult — a whole
-// workspace of folders + requests + environments — via Import, which
-// auto-detects the format.
+// Package importer converts external formats (cURL, OpenAPI, Postman, HAR,
+// Insomnia, Bruno) into the app's own request model. Single-request formats
+// use ParseCurl / ParseBruno; collection formats (OpenAPI, Postman, HAR,
+// Insomnia) return an ImportResult — a whole workspace of folders + requests
+// + environments — via Import, which auto-detects the format.
 package importer
 
 import (
@@ -27,15 +27,36 @@ type ImportResult struct {
 	Folders       []model.Folder      `json:"folders"`
 	Requests      []model.RequestDef  `json:"requests"`
 	Environments  []model.Environment `json:"environments"`
-	Format        string              `json:"format"` // "openapi" | "postman" | "curl"
+	Format        string              `json:"format"` // one of the Format* constants
 }
 
 // Format identifiers.
 const (
-	FormatCurl    = "curl"
-	FormatOpenAPI = "openapi"
-	FormatPostman = "postman"
+	FormatCurl     = "curl"
+	FormatOpenAPI  = "openapi"
+	FormatPostman  = "postman"
+	FormatHAR      = "har"
+	FormatInsomnia = "insomnia"
+	FormatBruno    = "bruno"
 )
+
+// newOrderMinter returns a closure that yields strictly increasing,
+// merge-safe order keys ("000001", "000002", …). A key that would end in the
+// alphabet's lowest digit ('0') gets a "1" appended, because such a key can
+// never have a sibling inserted directly before it (see
+// internal/storage/orderkey.go). This is the same guard postman.go and
+// openapi.go inline; the HAR/Insomnia/Bruno importers share it from here.
+func newOrderMinter() func() string {
+	order := 0
+	return func() string {
+		order++
+		k := fmt.Sprintf("%06d", order)
+		if strings.HasSuffix(k, "0") {
+			k += "1"
+		}
+		return k
+	}
+}
 
 // Import auto-detects the format of content and parses it into an
 // ImportResult. cURL yields a single-request bundle; OpenAPI and Postman
@@ -56,20 +77,34 @@ func Import(content string) (ImportResult, error) {
 		return ParseOpenAPI([]byte(content))
 	case FormatPostman:
 		return ParsePostman([]byte(content))
+	case FormatHAR:
+		return ParseHAR([]byte(content))
+	case FormatInsomnia:
+		return ParseInsomnia([]byte(content))
+	case FormatBruno:
+		return ParseBruno(content)
 	default:
-		return ImportResult{}, fmt.Errorf("could not detect import format (expected a curl command, OpenAPI spec, or Postman collection)")
+		return ImportResult{}, fmt.Errorf("could not detect import format (expected a curl command, OpenAPI spec, Postman/Insomnia collection, HAR file, or Bruno .bru request)")
 	}
 }
 
 // Detect classifies content by cheap structural signals, without a full
 // parse.
 func Detect(content string) string {
-	trimmed := strings.TrimSpace(content)
+	trimmed := strings.TrimPrefix(strings.TrimSpace(content), "\ufeff")
 	if trimmed == "" {
 		return ""
 	}
 	if strings.HasPrefix(trimmed, "curl ") || strings.HasPrefix(trimmed, "curl\t") {
 		return FormatCurl
+	}
+
+	// Bruno .bru is a text DSL (not JSON/YAML). Check it BEFORE decodeToMap
+	// so a `.bru` file never reaches the JSON/YAML mapper (which would either
+	// error or mis-parse `meta {`). Its leading block header disambiguates it
+	// from every JSON format, all of which start with '{'.
+	if looksBruno(trimmed) {
+		return FormatBruno
 	}
 
 	// JSON or YAML object: peek at the decoded top-level keys.
@@ -82,6 +117,22 @@ func Detect(content string) string {
 	}
 	if _, ok := m["swagger"]; ok {
 		return FormatOpenAPI
+	}
+	// HAR: a top-level "log" object carrying entries (or at least a version).
+	// Checked before Postman/Insomnia — none of those carry a "log" key.
+	if log, ok := m["log"].(map[string]any); ok {
+		if _, hasEntries := log["entries"]; hasEntries {
+			return FormatHAR
+		}
+		if _, hasVersion := log["version"]; hasVersion {
+			return FormatHAR
+		}
+	}
+	// Insomnia v4/v5-JSON export: the document's _type is "export" (and it
+	// also carries __export_format). Disambiguated from Postman by this
+	// marker — Insomnia has no info/item, Postman no _type.
+	if t, ok := m["_type"].(string); ok && t == "export" {
+		return FormatInsomnia
 	}
 	if info, ok := m["info"].(map[string]any); ok {
 		// Postman collections carry info._postman_id or a schema URL.

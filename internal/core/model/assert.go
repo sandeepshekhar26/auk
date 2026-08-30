@@ -1,5 +1,7 @@
 package model
 
+import "gopkg.in/yaml.v3"
+
 // AssertionSource selects what part of a response an assertion inspects.
 type AssertionSource string
 
@@ -49,4 +51,58 @@ type AssertionResult struct {
 	Passed    bool      `json:"passed"`
 	Actual    string    `json:"actual"`
 	Error     string    `json:"error,omitempty"` // evaluation error (bad path/regex), also counts as failed
+}
+
+// TestResult is one named check declared by a post-response script via
+// test("name", fn). A script can declare many; each is reported
+// independently so a CI reporter can render them as individual test cases
+// (JUnit <testcase>, etc.) rather than one opaque pass/fail per request.
+type TestResult struct {
+	Name   string `yaml:"name" json:"name"`
+	Passed bool   `yaml:"passed" json:"passed"`
+	// Error carries the assertion message for a failed test (or the thrown
+	// error's message), empty when Passed.
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// Passed reports whether every assertion AND every script test succeeded, and
+// no script error occurred — the single verdict a folder run or CI exit code
+// is derived from. A response with no checks at all counts as passed (there
+// was nothing to fail), so callers that need "was anything actually checked"
+// should look at the slice lengths.
+func (r ResponseData) Passed() bool {
+	if r.ScriptError != "" {
+		return false
+	}
+	for _, a := range r.AssertionResults {
+		if !a.Passed {
+			return false
+		}
+	}
+	for _, t := range r.TestResults {
+		if !t.Passed {
+			return false
+		}
+	}
+	return true
+}
+
+// UnmarshalYAML makes Enabled default to TRUE when the key is absent.
+//
+// Go's zero value for bool is false, so a hand-authored or generated
+// assertion that omits `enabled:` would silently never run — and a test that
+// never runs still reports GREEN, which is the single worst failure mode a
+// test tool can have (false confidence in CI). Anyone who bothered to write
+// an assertion meant it to run; only an explicit `enabled: false` disables
+// it. The GUI always writes the key explicitly, so round-tripped data is
+// unaffected.
+func (a *Assertion) UnmarshalYAML(node *yaml.Node) error {
+	// Alias type to avoid recursing into this method.
+	type rawAssertion Assertion
+	raw := rawAssertion{Enabled: true}
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	*a = Assertion(raw)
+	return nil
 }

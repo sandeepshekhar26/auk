@@ -173,3 +173,22 @@ AUK can expose itself as an MCP server (Settings → MCP Server) so Claude
 Code or another MCP client can list workspaces/requests and run them
 directly — see [docs/FEATURES.md](docs/FEATURES.md#embedded-mcp-server--let-claude-code-drive-the-app)
 for details on the approval gating for mutating requests.
+
+## Run your API tests in CI
+
+The same engine, headless, with an exit code your pipeline understands: run a
+whole folder (or workspace), iterate it over a CSV/JSON data file, and emit a
+JUnit report that Jenkins, GitLab and GitHub Actions parse natively.
+
+```
+apitool-cli run-folder <folderID> --workspace-dir ./collection --env staging \
+  --reporter cli --reporter junit --reporter-out results.xml
+```
+
+Exit `0` when every assertion and script test passed, `1` when any request
+failed, `2` when the run could not start. That is all it takes to fail a
+build.
+
+See [docs/09-ci-runner.md](docs/09-ci-runner.md) for the full CLI surface,
+the reporter formats, data-file variable precedence, and a copy-pasteable
+GitHub Actions workflow.

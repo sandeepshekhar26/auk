@@ -78,6 +78,7 @@ func New(resolver ChainResolver) *Engine {
 	e := &Engine{funcs: make(map[string]Func), resolver: resolver, cookies: cookiejar.New()}
 	e.registerBuiltins()
 	e.registerExtra()
+	e.registerRandom()
 	return e
 }
 
@@ -204,6 +205,176 @@ func (e *Engine) Resolve(ctx context.Context, req model.RequestDef, env *model.E
 	return resolved, nil
 }
 
+// ResolveAuth returns a DEEP COPY of auth with every credential string field
+// `${...}`-templated against the same variables Resolve uses. Auth config
+// fields were historically NOT templated (only URL/headers/params/body were),
+// so `Bearer ${token}` in the Auth tab stayed literal — surprising, and it
+// blocked the natural auth-chaining flow (a post-response script stores a
+// token, the next request's Auth→Bearer field references it). This closes
+// that for every auth kind.
+//
+// It is a COPY: the input *AuthConfig is a pointer straight into the store,
+// so resolving in place would rewrite the user's saved credentials with a
+// one-shot resolved value.
+func (e *Engine) ResolveAuth(ctx context.Context, req model.RequestDef, env *model.Environment, history core.ResponseLookup, auth *model.AuthConfig) (*model.AuthConfig, error) {
+	if auth == nil {
+		return nil, nil
+	}
+	vars := map[string]string{}
+	if env != nil {
+		for _, kv := range env.Variables {
+			if kv.Enabled {
+				vars[kv.Key] = kv.Value
+			}
+		}
+	}
+	var firstErr error
+	resolve := func(s string) string {
+		return refPattern.ReplaceAllStringFunc(s, func(match string) string {
+			expr := strings.TrimSpace(match[2 : len(match)-1])
+			out, err := e.eval(ctx, expr, req.WorkspaceID, vars, history)
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			return out
+		})
+	}
+
+	// Every nested credential struct is deep-copied so the returned config
+	// never aliases the store's, but ONLY the one matching auth.Kind is
+	// templated. The others are carried through verbatim.
+	//
+	// That distinction is load-bearing, not tidiness. The Auth tab
+	// deliberately PRESERVES the sub-objects of kinds you switched away from
+	// (so flipping Bearer → Basic → Bearer doesn't lose your typing), so a
+	// request that once used Basic still carries a Basic block referencing
+	// `${legacyPassword}` long after it moved to Bearer. Resolving that
+	// inactive block sets firstErr on an unresolved variable, and the engine
+	// turns any error here into a hard "resolve auth templates:" failure —
+	// so deleting a variable no request still uses would abort EVERY send of
+	// every request that ever referenced it. An inactive credential cannot
+	// break an active one.
+	out := *auth
+	out.Basic = cloneBasic(auth.Basic)
+	out.Bearer = cloneBearer(auth.Bearer)
+	out.APIKey = cloneAPIKey(auth.APIKey)
+	out.JWT = cloneJWT(auth.JWT)
+	out.OAuth2 = cloneOAuth2(auth.OAuth2)
+	out.AWSSigV4 = cloneAWSSigV4(auth.AWSSigV4)
+	out.OAuth1 = cloneOAuth1(auth.OAuth1)
+	out.Digest = cloneDigest(auth.Digest)
+
+	switch auth.Kind {
+	case model.AuthBasic:
+		if b := out.Basic; b != nil {
+			b.Username, b.Password = resolve(b.Username), resolve(b.Password)
+		}
+	case model.AuthBearer:
+		if b := out.Bearer; b != nil {
+			b.Token = resolve(b.Token)
+		}
+	case model.AuthAPIKey:
+		if a := out.APIKey; a != nil {
+			a.Key, a.Value = resolve(a.Key), resolve(a.Value)
+		}
+	case model.AuthJWT:
+		if j := out.JWT; j != nil {
+			j.Secret, j.Claims = resolve(j.Secret), resolve(j.Claims)
+		}
+	case model.AuthOAuth2:
+		if o := out.OAuth2; o != nil {
+			o.ClientID, o.ClientSecret, o.TokenURL = resolve(o.ClientID), resolve(o.ClientSecret), resolve(o.TokenURL)
+		}
+	case model.AuthAWSSigV4:
+		if a := out.AWSSigV4; a != nil {
+			a.AccessKeyID, a.SecretAccessKey = resolve(a.AccessKeyID), resolve(a.SecretAccessKey)
+			a.Region, a.Service, a.SessionToken = resolve(a.Region), resolve(a.Service), resolve(a.SessionToken)
+		}
+	case model.AuthOAuth1:
+		if o := out.OAuth1; o != nil {
+			o.ConsumerKey, o.ConsumerSecret = resolve(o.ConsumerKey), resolve(o.ConsumerSecret)
+			o.Token, o.TokenSecret = resolve(o.Token), resolve(o.TokenSecret)
+		}
+	case model.AuthDigest:
+		if d := out.Digest; d != nil {
+			d.Username, d.Password = resolve(d.Username), resolve(d.Password)
+		}
+	}
+
+	if firstErr != nil {
+		return &out, firstErr
+	}
+	return &out, nil
+}
+
+// The clone* helpers below each deep-copy one credential sub-struct (nil in,
+// nil out). They exist so ResolveAuth can hand back a config that shares
+// nothing with the store's, whether or not the sub-struct's kind is active.
+
+func cloneBasic(v *model.BasicAuth) *model.BasicAuth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
+func cloneBearer(v *model.BearerAuth) *model.BearerAuth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
+func cloneAPIKey(v *model.APIKeyAuth) *model.APIKeyAuth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
+func cloneJWT(v *model.JWTAuth) *model.JWTAuth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
+func cloneOAuth2(v *model.OAuth2Auth) *model.OAuth2Auth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
+func cloneAWSSigV4(v *model.AWSSigV4Auth) *model.AWSSigV4Auth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
+func cloneOAuth1(v *model.OAuth1Auth) *model.OAuth1Auth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
+func cloneDigest(v *model.DigestAuth) *model.DigestAuth {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
 // eval resolves one `${...}` expression: a bare variable name, a
 // `func(args)` call, or a `response('ReqName').body` chaining reference.
 func (e *Engine) eval(ctx context.Context, expr string, workspaceID model.ID, vars map[string]string, history core.ResponseLookup) (string, error) {
@@ -272,6 +443,17 @@ func (e *Engine) eval(ctx context.Context, expr string, workspaceID model.ID, va
 	// exposes) is available to future non-chaining callers without another
 	// signature change.
 	_ = history
+
+	// Bare `${name}` (no parens) that names a registered function: dispatch
+	// it with no args. This is what makes argument-less dynamic variables
+	// resolve — `${uuid}`, `${randomEmail}`, `${randomInt}` — and is exactly
+	// how an imported Postman collection reaches them, since Postman's
+	// `{{$random*}}` dynamic variables are always argument-less and map to
+	// bare `${random*}`. Checked AFTER variables so a user-defined variable
+	// of the same name still wins.
+	if fn, ok := e.funcs[expr]; ok {
+		return fn(nil)
+	}
 
 	// Undefined bare variable: leave the placeholder as-is rather than
 	// silently emitting an empty string, so a typo'd variable name is

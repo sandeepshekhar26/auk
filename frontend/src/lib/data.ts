@@ -82,6 +82,22 @@ export async function loadWorkspaceData(workspaceId: string): Promise<void> {
   setAppState('mcpConnections', (mcpConnections ?? []).map(normalizeMcpConnection))
 }
 
+/**
+ * Re-reads ONLY the environments for the active workspace.
+ *
+ * A post-response script's `vars.set()` persists into the active environment
+ * on the backend, so after a send (or a folder run) the in-memory copy the
+ * environment editor renders from can be stale. Deliberately narrower than
+ * loadWorkspaceData: that also replaces `requests`, which would clobber any
+ * unsaved edit sitting in the editor's debounce window.
+ */
+export async function refreshEnvironments(): Promise<void> {
+  const workspaceId = appState.activeWorkspaceId
+  if (!workspaceId) return
+  const environments = await wails.ListEnvironments(workspaceId)
+  setAppState('environments', (environments ?? []).map(normalizeEnvironment))
+}
+
 /** Creates a new MCP connection config (not yet connected) and reloads the list. */
 export async function createMcpConnection(conn: Omit<McpConnection, 'id' | 'workspaceId'>): Promise<void> {
   if (!appState.activeWorkspaceId) return

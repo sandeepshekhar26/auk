@@ -121,7 +121,7 @@ func TestParsePostman(t *testing.T) {
 	if login == nil {
 		t.Fatal("Login request not found")
 	}
-	if login.Method != "POST" || login.URL != "{{base}}/login" {
+	if login.Method != "POST" || login.URL != "${base}/login" {
 		t.Errorf("Login method/url wrong: %s %s", login.Method, login.URL)
 	}
 	if login.Body == nil || login.Body.Kind != model.BodyJSON {

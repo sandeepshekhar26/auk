@@ -8,12 +8,24 @@ import {
   openExplorer,
   setExplorerOpen,
   setImportModalOpen,
+  setMigrateModalOpen,
   setSettingsOpen,
   type ExplorerTab,
 } from '../lib/store'
 import { createRequest } from '../lib/data'
 import Tooltip from './Tooltip'
-import { IconCollection, IconCookie, IconGitBranch, IconHistory, IconImport, IconPlug, IconPlus, IconSearch, IconSettings } from './icons'
+import {
+  IconCollection,
+  IconCookie,
+  IconFolderPlus,
+  IconGitBranch,
+  IconHistory,
+  IconImport,
+  IconPlug,
+  IconPlus,
+  IconSearch,
+  IconSettings,
+} from './icons'
 
 // ActivityRail: the slim 48px icon strip that owns SECTION SWITCHING for the
 // sidebar — each section icon shows that section in the sidebar (docked
@@ -104,8 +116,17 @@ export default function ActivityRail() {
         <IconPlus size={17} />
       </RailButton>
 
-      <RailButton label="Import cURL / OpenAPI / Postman" onClick={() => setImportModalOpen(true)}>
+      <RailButton label="Import cURL, OpenAPI, Postman, Insomnia, Bruno, HAR" onClick={() => setImportModalOpen(true)}>
         <IconImport size={17} />
+      </RailButton>
+
+      {/* Migration is a bigger job than Import (many files -> one workspace,
+          plus a report), so it gets its own rail entry rather than hiding
+          inside the Import modal — it's the first thing a Postman switcher
+          looks for. Distinct icon for the same reason: two download arrows
+          side by side would be unreadable at 17px. */}
+      <RailButton label="Migrate from Postman" onClick={() => setMigrateModalOpen(true)}>
+        <IconFolderPlus size={17} />
       </RailButton>
 
       <div class="flex-1" />

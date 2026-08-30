@@ -299,3 +299,74 @@ URL's `:name` path variables (Postman's per-URL `variable` array) into AUK's
 Path params. An imported `/users/:id` request lands with its `id` Path row
 pre-filled from the collection, and the raw URL keeps its `:id` tokens so the
 editor's derived rows and the imported values line up.
+
+## Mock server
+
+A frontend team is blocked on one of two things: the API doesn't exist yet, or
+it's down. AUK already holds the thing that unblocks them — the responses the
+backend actually returned. **Settings → Mock Server → Start** puts them on
+`http://127.0.0.1:8725`, and the frontend points its `.env` there.
+
+No fixture files, no schema, no separate mocking tool that drifts from
+reality: the mock **is** the last real response. Send a request once in AUK
+and it's mocked. Re-send it and the mock updates on the very next hit — the
+route table is derived live from the store on every incoming request, so a
+changed status, body, or header lands without a restart, and a brand-new
+request appears as a new route the moment it's sent.
+
+Routes come from each saved request's URL: `METHOD` plus the path portion,
+with `${var}` and `:param` segments treated as **wildcards** matching any
+single segment (`${baseUrl}/users/:id` → `GET /users/:id`, which serves
+`/users/42`). Query strings are ignored for routing. Most-specific wins, so a
+recorded `/users/me` beats `/users/:id`. A known path under an unrecorded
+method returns **405 with `Allow`**; anything unknown returns a **404 that
+tells you what to do** — `{"error":"no mock for GET /x","hint":"send the
+request once in AUK to record a mock"}`.
+
+Replay is faithful: exact status, exact body, headers verbatim (repeats
+preserved, so `Set-Cookie` survives) — minus hop-by-hop headers, with
+`Content-Length` recomputed and `Date` regenerated. **CORS is unconditional**,
+including on the 404s and 405s (a frontend must be able to *read* the error,
+not have it hidden behind a CORS failure), and `OPTIONS` preflights are
+answered `204` even for unknown paths so the browser surfaces the real status.
+Every response carries `X-AUK-Mock: 1`, so "is this the mock or the real API?"
+is one glance at devtools. Loopback-only and never auto-started — a mock full
+of a team's real API data shouldn't bind a port on its own or be reachable
+from the network the laptop is on. See
+[10-mock-server.md](10-mock-server.md).
+
+## HTTP Digest auth (RFC 7616)
+
+Digest is what on-prem and enterprise APIs use — along with a very large
+number of routers, IP cameras, NAS boxes, and other appliances whose admin
+API is the only interface they have. It is also the one scheme that does not
+fit AUK's "compute a header, attach it, send" auth model, because the reply
+hashes a nonce the server has not issued yet. So AUK implements it where it
+actually belongs: at the transport layer, as a **two-shot handshake**. The
+request goes out once, the server answers `401` with a `WWW-Authenticate:
+Digest` challenge, and AUK re-sends the *same* request — same method, URL,
+headers, and body — carrying the computed `Authorization`.
+
+Pick **Digest Auth** in the Auth tab and fill in a username and password;
+everything else is negotiated from the challenge.
+
+**Algorithms**: `MD5`, `SHA-256`, and `SHA-512-256`, plus each one's `-sess`
+variant, and the MD5 default a challenge that omits `algorithm` implies.
+**qop**: `auth`, and the qop-less RFC 2069 construction that older appliances
+still emit. `auth-int` is not supported; a server offering only `auth-int`
+gets its `401` passed straight through rather than a silent failure. When a
+server offers several challenges at once, AUK answers the strongest one it
+can actually compute.
+
+Three behaviours worth knowing:
+
+- **The retry is visible.** Both round-trips show up in the request
+  debugger's hop chain — `401` then `200` — and the timing breakdown
+  describes the authorized hop whose body you are reading. The challenge is
+  real network traffic, so AUK shows it rather than hiding a doubled
+  round-trip.
+- **Bodies survive the handshake.** A `POST`/`PUT` body is made replayable
+  *before* the first attempt, so the retry carries the identical payload.
+- **Exactly one retry, ever.** A second `401` means the credentials are
+  wrong, and that `401` is what you see. AUK will not loop against an
+  endpoint that may have an account-lockout policy behind it.

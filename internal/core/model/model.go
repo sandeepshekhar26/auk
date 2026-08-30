@@ -75,6 +75,7 @@ const (
 	AuthOAuth2   AuthKind = "oauth2"
 	AuthAWSSigV4 AuthKind = "awsSigV4"
 	AuthOAuth1   AuthKind = "oauth1"
+	AuthDigest   AuthKind = "digest"
 )
 
 type AuthConfig struct {
@@ -86,6 +87,17 @@ type AuthConfig struct {
 	OAuth2   *OAuth2Auth   `yaml:"oauth2,omitempty" json:"oauth2,omitempty"`
 	AWSSigV4 *AWSSigV4Auth `yaml:"awsSigV4,omitempty" json:"awsSigV4,omitempty"`
 	OAuth1   *OAuth1Auth   `yaml:"oauth1,omitempty" json:"oauth1,omitempty"`
+	Digest   *DigestAuth   `yaml:"digest,omitempty" json:"digest,omitempty"`
+}
+
+// DigestAuth carries HTTP Digest (RFC 7616) credentials. Unlike every other
+// auth kind, Digest is a CHALLENGE-RESPONSE handshake: the first attempt gets
+// a 401 + WWW-Authenticate, and the reply is computed from that challenge —
+// so it is implemented as a transport wrapper in internal/protocols/http
+// (digest.go), not via auth.Apply's compute-once-attach-header model.
+type DigestAuth struct {
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password"`
 }
 
 type BasicAuth struct {
@@ -188,6 +200,12 @@ type RequestDef struct {
 	// idempotency keys) on the SAME request that then passes through the
 	// normal chokepoint, never around it. Empty skips scripting entirely.
 	PreRequestScript string `yaml:"preRequestScript,omitempty" json:"preRequestScript,omitempty"`
+	// PostResponseScript is a JS snippet run AFTER the response arrives. It is
+	// where real test suites live: it can assert with test()/expect(), read the
+	// parsed response, and — unlike the pre-request script — WRITE variables
+	// back to the environment, which is what makes auth-token chaining across
+	// a folder run possible. Empty skips it entirely.
+	PostResponseScript string `yaml:"postResponseScript,omitempty" json:"postResponseScript,omitempty"`
 	// TLS carries optional per-request transport settings (client cert for
 	// mTLS, a custom CA, or skip-verify) — orthogonal to Auth, since a
 	// request can need a client certificate at the TLS layer independent of
@@ -264,6 +282,20 @@ type ResponseData struct {
 	// AssertionResults holds the outcome of the request's declarative
 	// assertions against this response (empty when the request has none).
 	AssertionResults []AssertionResult `json:"assertionResults,omitempty"`
+	// TestResults holds the outcome of every test() the post-response script
+	// declared (empty when the request has no script, or the script declared
+	// none). Distinct from AssertionResults: those come from the fixed
+	// declarative matrix, these from arbitrary JS — both feed the same
+	// pass/fail verdict a CI run reports on.
+	TestResults []TestResult `json:"testResults,omitempty"`
+	// ScriptLogs is console.* output captured from the post-response script
+	// (capped by the scripting runtime). Shown in the response pane so a
+	// script can be debugged without a separate console.
+	ScriptLogs []string `json:"scriptLogs,omitempty"`
+	// ScriptError is set when the post-response script itself failed to run
+	// (syntax error, timeout, threw outside a test). A script that cannot run
+	// is a FAILED run, not a silently-passing one.
+	ScriptError string `json:"scriptError,omitempty"`
 	// Timing is the DNS/connect/TLS/TTFB breakdown for the FINAL hop (nil
 	// for protocols other than HTTP, which don't go through net/http's
 	// RoundTripper). A phase reading 0 means it was legitimately skipped

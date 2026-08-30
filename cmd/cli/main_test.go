@@ -70,7 +70,8 @@ func TestRunRequestThroughCLIEngine(t *testing.T) {
 			srv := httptest.NewServer(tt.handler)
 			defer srv.Close()
 
-			store, err := storage.NewFileStore(t.TempDir())
+			dir := t.TempDir()
+			store, err := storage.NewFileStore(dir)
 			if err != nil {
 				t.Fatalf("NewFileStore() error = %v", err)
 			}
@@ -78,7 +79,10 @@ func TestRunRequestThroughCLIEngine(t *testing.T) {
 			if err != nil {
 				t.Fatalf("seedDemoData() error = %v", err)
 			}
-			engine := buildEngine(store)
+			engine, _, err := openWorkspace(dir)
+			if err != nil {
+				t.Fatalf("openWorkspace() error = %v", err)
+			}
 
 			resp, runErr := engine.RunRequest(context.Background(), uuid.NewString(), requestID, "", "cli", core.NoopSink{})
 			if resp.Status != tt.wantStatus {
@@ -93,14 +97,13 @@ func TestRunRequestThroughCLIEngine(t *testing.T) {
 	}
 }
 
-func TestNewStoreSeedsARunnableRequest(t *testing.T) {
-	store, err := newStore(t.TempDir())
+func TestOpenWorkspaceSeedsARunnableRequest(t *testing.T) {
+	engine, store, err := openWorkspace(t.TempDir())
 	if err != nil {
-		t.Fatalf("newStore() error = %v", err)
+		t.Fatalf("openWorkspace() error = %v", err)
 	}
-	engine := buildEngine(store)
 
-	requests := store.(*storage.FileStore).ListRequests("")
+	requests := store.ListRequests("")
 	if len(requests) != 1 {
 		t.Fatalf("expected exactly one seeded request, got %d", len(requests))
 	}
@@ -227,7 +230,8 @@ func TestAssertionGate(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			store, err := storage.NewFileStore(t.TempDir())
+			dir := t.TempDir()
+			store, err := storage.NewFileStore(dir)
 			if err != nil {
 				t.Fatalf("NewFileStore: %v", err)
 			}
@@ -242,7 +246,10 @@ func TestAssertionGate(t *testing.T) {
 				t.Fatalf("PutRequest: %v", err)
 			}
 
-			engine := buildEngine(store)
+			engine, _, err := openWorkspace(dir)
+			if err != nil {
+				t.Fatalf("openWorkspace: %v", err)
+			}
 			resp, runErr := engine.RunRequest(context.Background(), uuid.NewString(), reqID, "", "cli", core.NoopSink{})
 			if resp.Status != 200 {
 				t.Fatalf("expected status 200, got %d (runErr=%v)", resp.Status, runErr)

@@ -17,4 +17,11 @@ type AppSettings struct {
 	// SidebarMode is "docked" (persistent left tree, the default — empty
 	// string means docked) or "overlay" (the original slide-over drawer).
 	SidebarMode string `yaml:"sidebarMode,omitempty" json:"sidebarMode"`
+	// MockPort is the loopback port the mock server binds (Settings → Mock
+	// Server; see internal/mockserver and docs/10-mock-server.md). Remembered
+	// so a frontend's `.env` pointing at 127.0.0.1:<port> keeps working
+	// across restarts. 0 means "use mockserver.DefaultPort". Only the PORT is
+	// persisted, not whether the mock was running — unlike MCPEnabled, the
+	// mock never auto-starts on launch.
+	MockPort int `yaml:"mockPort,omitempty" json:"mockPort"`
 }

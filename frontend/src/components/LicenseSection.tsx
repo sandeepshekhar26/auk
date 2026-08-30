@@ -180,7 +180,7 @@ export default function LicenseSection() {
               onClick={openCheckout}
               class="rounded px-2 py-1.5 text-xs font-medium text-accent-fg hover:underline"
             >
-              Buy AUK — $69 →
+              Buy AUK — $49 →
             </button>
           </div>
         </form>

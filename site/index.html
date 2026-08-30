@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUK — The API client that isn't a subscription</title>
+<meta name="description" content="AUK is a keyboard-first, git-native macOS API client. REST, GraphQL, WebSocket, SSE and gRPC on one engine, built-in k6 load testing, an MCP server for AI agents, and a CI runner. $49 one-time — no subscription, no account.">
+<meta name="theme-color" content="#0C0F14" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F5F7F9" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://auk.deskmcp.com/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AUK — The API client that isn't a subscription">
+<meta property="og:description" content="Keyboard-first, git-native macOS API client. Five protocols on one engine, built-in load testing, MCP server for AI agents. $49 one-time.">
+<meta property="og:url" content="https://auk.deskmcp.com/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      AUK
+    </a>
+    <nav aria-label="Main">
+      <ul class="nav-links">
+        <li><a href="index.html" aria-current="page">Product</a></li>
+        <li><a href="index.html#pricing">Pricing</a></li>
+        <li><a href="terms.html">Terms</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="refund.html">Refunds</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============================================================ hero -- -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">macOS · one-time purchase</p>
+        <h1>The API client that isn't a subscription.</h1>
+        <p class="lede">
+          AUK is a keyboard-first, git-native API client for macOS. Five protocols on one
+          engine, load testing built in, and an MCP server so your AI agent can drive the
+          workspace instead of you clicking through it. Buy it once; it's yours.
+        </p>
+        <div class="btn-row" style="margin-top:26px">
+          <a class="btn btn-primary" href="#pricing">See pricing — $39</a>
+          <a class="btn" href="https://github.com/sandeepshekhar26/auk/releases/latest">Download free trial</a>
+        </div>
+        <p class="hero-meta">
+          <span>14-day trial</span><span>·</span>
+          <span>No account needed</span><span>·</span>
+          <span>~20&nbsp;MB native app</span><span>·</span>
+          <span>Signed &amp; notarized</span>
+        </p>
+      </div>
+
+      <!-- Hero visual: a stylized app window, built entirely in HTML + CSS.
+           No screenshots, no binary assets. -->
+      <div class="mock" role="img" aria-label="Stylized screenshot of the AUK app window: a GET request to an API endpoint returning a 200 OK JSON response in 214 milliseconds, with two passing tests.">
+        <div class="mock-bar" aria-hidden="true">
+          <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+          <span class="mock-title">payments · staging</span>
+        </div>
+        <div class="mock-req" aria-hidden="true">
+          <span class="m m-get">GET</span>
+          <span class="mock-url"><span class="u-host">https://api.staging.acme.dev</span>/v2/invoices/<span class="u-host">{{id}}</span></span>
+          <span class="mock-send">SEND</span>
+        </div>
+        <div class="mock-status" aria-hidden="true">
+          <span class="ok">200 OK</span>
+          <span>214 ms</span>
+          <span>1.8 KB</span>
+          <span>TTFB 96 ms</span>
+        </div>
+<pre class="mock-body" aria-hidden="true">{
+  <span class="k">"id"</span><span class="p">:</span> <span class="s">"inv_9f2ac1"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span> <span class="s">"paid"</span><span class="p">,</span>
+  <span class="k">"amount_due"</span><span class="p">:</span> <span class="n">0</span><span class="p">,</span>
+  <span class="k">"currency"</span><span class="p">:</span> <span class="s">"usd"</span>
+}</pre>
+        <div class="mock-foot" aria-hidden="true">
+          <span class="pass">&#10003; status is 200</span>
+          <span class="pass">&#10003; body.status == "paid"</span>
+          <span>2 passed</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================== features -- -->
+  <section class="section" id="features">
+    <div class="wrap">
+      <p class="eyebrow">What's in it</p>
+      <h2>Everything on one engine</h2>
+      <p class="lede" style="margin-bottom:30px">
+        The GUI, the CLI, the MCP server and the load generator all execute requests through
+        the same core, so what you see in the app is exactly what runs in CI.
+      </p>
+
+      <div class="grid">
+        <div class="card">
+          <span class="m m-get">GET</span>
+          <h3>Five protocols, one workspace</h3>
+          <p>REST, GraphQL, WebSocket, SSE and gRPC — gRPC via server reflection, so no
+          <code>.proto</code> files or precompiled stubs. Same editor, same history, same
+          environments across all of them.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-post">POST</span>
+          <h3>Load testing built in</h3>
+          <p>Turn any saved request into a k6 load test without leaving the app. Live
+          requests-per-second and p95 charts, SLA thresholds, and a plain pass/fail verdict.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-ws">MCP</span>
+          <h3>An MCP server for your agent</h3>
+          <p>AUK exposes itself over MCP, so Claude Code or any MCP client can list, run and
+          load-test your saved requests directly. Anything mutating is gated behind an
+          approval prompt.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-post">JS</span>
+          <h3>Pre- and post-request scripting</h3>
+          <p>Real JavaScript hooks with <code>test()</code> and <code>expect()</code>.
+          Chain an auth token out of one response and into the next request without
+          copy-pasting a bearer token ever again.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-get">CI</span>
+          <h3>A CLI runner that gates builds</h3>
+          <p>Run a folder headlessly, emit JUnit XML for your CI dashboard, and exit non-zero
+          on failure. It's the same engine as the GUI, not a second implementation that
+          drifts.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-del">SPEC</span>
+          <h3>Contract testing against OpenAPI</h3>
+          <p>Validate live responses against your OpenAPI document and catch the moment the
+          implementation and the spec disagree — undocumented fields, wrong types, missing
+          required properties.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-get">GIT</span>
+          <h3>Git-native storage</h3>
+          <p>Every workspace is plain YAML on disk. Diff it, review it in a pull request,
+          sync it with whatever remote you already use. No cloud, no account, no lock-in.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-del">KEY</span>
+          <h3>Secrets in the macOS keychain</h3>
+          <p>API keys and tokens live in the system keychain, not in the files you commit.
+          Share a workspace with your team without leaking credentials into git history.</p>
+        </div>
+
+        <div class="card">
+          <span class="m m-post">IMPORT</span>
+          <h3>Bring your existing collections</h3>
+          <p>Imports Postman, Insomnia, OpenAPI and raw cURL commands. Paste a cURL line and
+          send it immediately — nothing to configure first.</p>
+        </div>
+      </div>
+
+      <p class="small muted" style="margin-top:24px">
+        Native macOS app built on a system webview — roughly 20&nbsp;MB, no bundled Chromium.
+        Every release is code-signed and notarized by Apple.
+      </p>
+    </div>
+  </section>
+
+  <!-- ========================================================= pricing -- -->
+  <section class="section" id="pricing">
+    <div class="wrap">
+      <p class="eyebrow">Pricing</p>
+      <h2>One price. One time.</h2>
+      <p class="lede" style="margin-bottom:30px">
+        AUK is a single perpetual licence for macOS. There is no monthly plan, no seat
+        counter, and no free tier that quietly expires.
+      </p>
+
+      <div class="price-card">
+        <p style="margin:0 0 12px"><span class="price-tag">Launch offer</span></p>
+
+        <div class="price-row">
+          <span class="price-now">$39</span>
+          <span class="price-was">$49</span>
+          <span class="price-unit">USD · one-time payment</span>
+        </div>
+        <p class="small muted" style="margin-top:2px">
+          Regular price is <strong>$49</strong> one-time. The <strong>$39</strong> launch
+          price applies to orders placed during the launch period. Prices are in US dollars;
+          any sales tax or VAT is calculated at checkout.
+        </p>
+
+        <ul class="price-list">
+          <li><strong>Perpetual licence</strong> — the version you buy keeps working forever</li>
+          <li><strong>3 Macs</strong> on the same licence</li>
+          <li><strong>12 months of updates</strong> included from the date of purchase</li>
+          <li><strong>14-day free trial</strong>, fully featured — try before you pay</li>
+          <li><strong>No account needed</strong> — no sign-up, no cloud workspace</li>
+          <li><strong>14-day money-back guarantee</strong>, no questions asked</li>
+        </ul>
+
+        <div class="btn-row">
+          <!--
+            PADDLE CHECKOUT GOES HERE.
+
+            After the Paddle seller account is approved and auk.deskmcp.com is an
+            approved domain, replace the placeholder href/data-todo on the #buy anchor
+            below with a Paddle.js overlay checkout. The usual shape is:
+
+              1. Add the Paddle.js script + initializer to <head> on this page:
+                   <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+                   <script>
+                     Paddle.Environment.set("production");           // "sandbox" while testing
+                     Paddle.Initialize({ token: "live_xxxxxxxxxxxx" }); // client-side token
+                   </script>
+
+              2. Swap the placeholder attributes on #buy for Paddle's data attributes:
+                   <a id="buy" href="#"
+                      class="paddle_button"
+                      data-items='[{"priceId":"pri_xxxxxxxxxxxx","quantity":1}]'
+                      data-theme="dark">Buy AUK — $39</a>
+
+            Keep the legal links in .buy-legal directly below the button: Paddle's
+            domain review checks that Terms, Privacy and Refund policy are reachable
+            from inside the purchase flow, not just from the site nav.
+          -->
+          <a id="buy" href="#" data-todo="paddle-checkout">Buy AUK — $39</a>
+          <a class="btn" href="https://github.com/sandeepshekhar26/auk/releases/latest">Download the 14-day trial</a>
+        </div>
+
+        <p class="buy-legal">
+          By purchasing you agree to our
+          <a href="terms.html">Terms &amp; Conditions</a><span class="sep">·</span><a href="privacy.html">Privacy Policy</a><span class="sep">·</span><a href="refund.html">Refund Policy</a><br>
+          <span class="small">Orders are processed by Paddle.com as merchant of record. Your licence key is emailed to you immediately after payment.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= faq -- -->
+  <section class="section" id="faq">
+    <div class="wrap">
+      <p class="eyebrow">Questions</p>
+      <h2>Before you buy</h2>
+
+      <div class="faq">
+        <details open>
+          <summary>What happens after the 12 months of updates run out?</summary>
+          <p>Nothing breaks. Your licence is perpetual: every version released during your
+          12-month window keeps working forever, on up to 3 Macs, with no further payment
+          and no phone-home requirement. What lapses is only access to <em>newer</em>
+          releases. If you want another 12 months of updates later, you can renew at a
+          discount — but you are never obliged to, and the app you already have will not
+          nag, degrade, or stop launching.</p>
+        </details>
+
+        <details>
+          <summary>Is there a free trial?</summary>
+          <p>Yes — 14 days, completely unlocked. Every feature is available during the
+          trial, including k6 load testing, the MCP server and the CLI runner. No account,
+          no credit card, no sign-up form: download the build, open it, and start sending
+          requests.</p>
+        </details>
+
+        <details>
+          <summary>What is your refund policy?</summary>
+          <p>A 14-day money-back guarantee, no questions asked. Email
+          <a href="mailto:skumar5190@gmail.com">skumar5190@gmail.com</a> within 14 days of
+          purchase and the refund is issued to your original payment method by Paddle.
+          The full terms are on the <a href="refund.html">Refund Policy</a> page.</p>
+        </details>
+
+        <details>
+          <summary>Does AUK send my data anywhere?</summary>
+          <p>No telemetry and no analytics. Your workspaces are plain YAML files on your own
+          Mac, and secrets live in the macOS keychain. The app talks to a server for exactly
+          two things: activating your licence, and checking GitHub for new releases. Git
+          syncing is optional and points at whatever remote you configure. See the
+          <a href="privacy.html">Privacy Policy</a>.</p>
+        </details>
+
+        <details>
+          <summary>How many machines can I use it on?</summary>
+          <p>Three Macs on one licence — a laptop, a desktop and a spare, for example. You
+          can deactivate a machine and move the seat to a new one at any time; email support
+          if you lose access to an old Mac.</p>
+        </details>
+
+        <details>
+          <summary>Which macOS versions are supported?</summary>
+          <p>Recent macOS on both Apple Silicon and Intel. AUK is a native app built on the
+          system webview rather than a bundled browser runtime, so the download is around
+          20&nbsp;MB and every release is code-signed and notarized by Apple.</p>
+        </details>
+
+        <details>
+          <summary>Who am I actually buying from?</summary>
+          <p>AUK is built and sold by an independent sole proprietor based in India — the
+          exact legal name is given in the <a href="terms.html#seller">Seller clause of our
+          Terms &amp; Conditions</a>, and in the footer of this page. Payment itself is
+          processed by Paddle.com, which acts as the merchant of record for the order and
+          handles billing, sales tax and VAT.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <ul class="foot-links">
+      <li><a href="index.html">Product</a></li>
+      <li><a href="index.html#pricing">Pricing</a></li>
+      <li><a href="terms.html">Terms &amp; Conditions</a></li>
+      <li><a href="privacy.html">Privacy Policy</a></li>
+      <li><a href="refund.html">Refund Policy</a></li>
+      <li><a href="mailto:skumar5190@gmail.com">Contact</a></li>
+    </ul>
+    <!-- LEGAL-NAME (2 of 2): footer copyright line, repeated verbatim on every page. -->
+    <p>&copy; 2026 Sandeep Kumar &middot; AUK is sold via Paddle.com as merchant of record.</p>
+    <p class="small">Support and enquiries: <a href="mailto:skumar5190@gmail.com">skumar5190@gmail.com</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -8,6 +8,9 @@ const FORMAT_LABEL: Record<string, string> = {
   curl: 'cURL command',
   openapi: 'OpenAPI / Swagger spec',
   postman: 'Postman collection',
+  har: 'HAR file (browser / proxy capture)',
+  insomnia: 'Insomnia collection',
+  bruno: 'Bruno request (.bru)',
 }
 
 // ImportCurlModal is the general Import surface (name kept for the store
@@ -84,7 +87,7 @@ export default function ImportCurlModal() {
           <div class="border-b border-edge px-4 py-3">
             <h2 class="text-sm font-semibold text-ink">Import</h2>
             <p class="mt-0.5 text-xs text-ink-muted">
-              Paste a cURL command, an OpenAPI/Swagger spec, or a Postman collection — the format is detected automatically.
+              Paste a cURL command, or an OpenAPI, Postman, Insomnia, Bruno, or HAR export — the format is detected automatically.
             </p>
           </div>
 
@@ -94,7 +97,7 @@ export default function ImportCurlModal() {
               rows={10}
               spellcheck={false}
               class="w-full resize-none rounded border border-edge bg-app p-2 font-mono text-xs text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
-              placeholder={'curl https://api.example.com/users\n\n— or paste an OpenAPI spec / Postman collection JSON —'}
+              placeholder={'curl https://api.example.com/users\n\n— or paste an OpenAPI / Postman / Insomnia / Bruno / HAR export —'}
               value={raw()}
               onInput={(e) => onInput(e.currentTarget.value)}
             />

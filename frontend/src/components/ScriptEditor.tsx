@@ -15,24 +15,29 @@ const editorTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
 })
 
-// Pre-request script editor (JS, via @codemirror/lang-javascript). Mirrors
-// BodyEditor's JsonCodeMirror structure exactly, including the same fix:
-// the view-construction effect is keyed on requestIndex ONLY (via untrack
+// Which of the request's two scripts this editor instance is bound to. Both
+// are plain JS in the same sandbox; they differ only in when they run and
+// what they can reach (see docs/08-scripting.md).
+export type ScriptField = 'preRequestScript' | 'postResponseScript'
+
+// Script editor (JS, via @codemirror/lang-javascript). Mirrors BodyEditor's
+// JsonCodeMirror structure exactly, including the same fix: the
+// view-construction effect is keyed on requestIndex/field ONLY (via untrack
 // for the initial text), never on the text prop itself — otherwise every
 // keystroke would round-trip through docChanged -> setAppState -> a new
 // text prop -> this effect re-firing -> the view being destroyed and
 // rebuilt unfocused after each character typed.
-export default function ScriptEditor(props: { requestIndex: number }) {
+export default function ScriptEditor(props: { requestIndex: number; field: ScriptField }) {
   let container: HTMLDivElement | undefined
   let view: EditorView | undefined
   let lastPushed: string | undefined
 
-  const text = () => appState.requests[props.requestIndex]?.preRequestScript ?? ''
+  const text = () => appState.requests[props.requestIndex]?.[props.field] ?? ''
 
   createEffect(
     on(
-      () => props.requestIndex,
-      (idx) => {
+      () => [props.requestIndex, props.field] as const,
+      ([idx, field]) => {
         if (!container) return
 
         if (view) {
@@ -56,7 +61,7 @@ export default function ScriptEditor(props: { requestIndex: number }) {
                 if (!update.docChanged) return
                 const value = update.state.doc.toString()
                 lastPushed = value
-                setAppState('requests', idx, 'preRequestScript', value)
+                setAppState('requests', idx, field, value)
               }),
             ],
           }),

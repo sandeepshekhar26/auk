@@ -7,6 +7,7 @@ import {
   setShortcutSheetOpen,
   setSettingsOpen,
   setImportModalOpen,
+  setMigrateModalOpen,
   setLoadError,
   streamConsoleOpen,
   setStreamConsoleOpen,
@@ -24,6 +25,20 @@ async function exportActiveWorkspace() {
   if (!appState.activeWorkspaceId) return
   try {
     await wails.ExportWorkspace(appState.activeWorkspaceId)
+  } catch (err) {
+    setLoadError(err instanceof Error ? err.message : String(err))
+  }
+}
+
+// ExportWorkspaceOpenAPI is a Go binding (app_export.go). It auto-binds by
+// reflection on the next wails build; reached through a locally-typed view so
+// tsc/build stay green until then (same pattern as the mock-server bindings).
+async function exportActiveWorkspaceOpenAPI() {
+  if (!appState.activeWorkspaceId) return
+  try {
+    await (wails as unknown as { ExportWorkspaceOpenAPI(id: string): Promise<string> }).ExportWorkspaceOpenAPI(
+      appState.activeWorkspaceId,
+    )
   } catch (err) {
     setLoadError(err instanceof Error ? err.message : String(err))
   }
@@ -72,7 +87,15 @@ export default function CommandPalette() {
       },
       { id: 'action:browse-history', title: 'Browse History', group: 'action', run: () => openExplorer('history') },
       { id: 'action:import', title: 'Import…', group: 'action', run: () => setImportModalOpen(true) },
-      { id: 'action:export', title: 'Export Workspace…', group: 'action', run: () => void exportActiveWorkspace() },
+      {
+        id: 'action:migrate-postman',
+        title: 'Migrate from Postman…',
+        subtitle: 'collections + environments',
+        group: 'action',
+        run: () => setMigrateModalOpen(true),
+      },
+      { id: 'action:export', title: 'Export Workspace (JSON)…', group: 'action', run: () => void exportActiveWorkspace() },
+      { id: 'action:export-openapi', title: 'Export as OpenAPI…', group: 'action', run: () => void exportActiveWorkspaceOpenAPI() },
       {
         id: 'action:stream-console',
         title: streamConsoleOpen() ? 'Hide Stream Console' : 'Show Stream Console',
