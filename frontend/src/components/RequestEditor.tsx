@@ -1,5 +1,6 @@
 import { Show, Switch, Match, createEffect, createMemo, createSignal, For, on } from 'solid-js'
-import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, activeStreams, pushStreamEvent } from '../lib/store'
+import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, setSettingsOpen, activeStreams, pushStreamEvent } from '../lib/store'
+import { licenseStatus } from '../lib/license'
 import { saveRequestDebounced } from '../lib/data'
 import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
 import { wails } from '../lib/wails'
@@ -127,6 +128,16 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
 
   const activeIndex = createMemo(() => appState.requests.findIndex((r) => r.id === appState.activeTabId))
   const active = createMemo(() => appState.requests.find((r) => r.id === appState.activeTabId))
+
+  // Soft licence gate: once the trial has ended (or a stored licence fails to
+  // verify), block the two request-INITIATING actions (Send / Connect) —
+  // everything else, including viewing, editing and Disconnecting a live
+  // stream, stays fully usable. Absent/loading status never gates, so a
+  // pre-regeneration dev build or a licensed user is unaffected.
+  const sendGated = createMemo(() => {
+    const s = licenseStatus()
+    return s?.state === 'trial_expired' || s?.state === 'license_invalid'
+  })
 
   const streaming = (requestId: string) => !!activeStreams()[requestId]
 
@@ -385,25 +396,34 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
             <Show
               when={isStreamingProtocol(req().protocol || 'http', isGrpcServerStreaming(req().id))}
               fallback={
-                <button
-                  class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
-                  onClick={() => props.onSend(req().id)}
+                <Show
+                  when={!sendGated()}
+                  fallback={<ActivateToSend />}
                 >
-                  Send
-                </button>
+                  <button
+                    class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
+                    onClick={() => props.onSend(req().id)}
+                  >
+                    Send
+                  </button>
+                </Show>
               }
             >
               <Show
                 when={streaming(req().id)}
                 fallback={
-                  <button
-                    class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
-                    onClick={() => connect(req().id)}
-                  >
-                    Connect
-                  </button>
+                  <Show when={!sendGated()} fallback={<ActivateToSend />}>
+                    <button
+                      class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
+                      onClick={() => connect(req().id)}
+                    >
+                      Connect
+                    </button>
+                  </Show>
                 }
               >
+                {/* Disconnect is never gated — you can always stop an
+                    in-flight stream, licence state notwithstanding. */}
                 <button
                   class="rounded border border-edge-strong bg-field px-3 py-1 text-sm font-medium text-danger hover:bg-raised"
                   onClick={() => stopStream(req().id)}
@@ -570,6 +590,22 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
 }
 
 // This app is built to be driven from the keyboard, so the empty state
+// Shown in place of Send/Connect once the trial has ended: clicking opens
+// Settings → License rather than silently doing nothing, so the path to
+// keep working is one click away. Amber, not red — this is a nudge to buy,
+// not an error.
+function ActivateToSend() {
+  return (
+    <button
+      class="rounded border border-warn/40 bg-warn/10 px-3 py-1 text-sm font-medium text-warn hover:bg-warn/20"
+      title="Your trial has ended — activate a licence to keep sending requests"
+      onClick={() => setSettingsOpen(true)}
+    >
+      Activate to send
+    </button>
+  )
+}
+
 // makes ⌘K the hero rather than a footnote — it's the primary way to get
 // anywhere, not a bolted-on shortcut for people who already found the tree.
 function EmptyState() {

@@ -320,3 +320,39 @@ Goal: broaden platforms, mock/test ecosystem, and optional collaboration.
 3. ★ **Full multi-protocol + strong request chaining on one headless engine** — GUI, CLI, MCP, and k6 all consume identical execution logic.
 4. ★ **Headless CLI runner + assertion engine** — Yaak's two biggest documented gaps; unblocks CI and makes the MCP/perf tools useful.
 5. ★ **Response diffing** and ★ **bundled OpenAPI mock server** — under-served across all competitors; both synergize with git-friendly storage and the k6 story.
+
+---
+
+### Auto-update (in-app updater) — built 2026-08-30
+
+The v0.5 **Distribution ★ / Auto-update mechanics** line above (§5.0 table) is
+now built. Approach differs from the placeholder note there (it guessed
+`minio/selfupdate` + binary patch): a binary patch invalidates the Gatekeeper
+signature, so instead this **swaps a whole, already-codesigned+notarized
+bundle** and re-verifies it — the security model, not a diff, is the point.
+
+- [x] `internal/updater` package — SemVer compare (pre-release-aware, so a dev
+  build never reads as newer than the release it derives from), current version
+  from the bundle `Info.plist`, a `Feed` abstraction with a GitHub-Releases
+  implementation, and the download→verify→stage→swap pipeline. **30 unit tests,
+  network-free** (`go test ./internal/updater/...` green). Verification chain:
+  size-capped download → optional published SHA-256 → `codesign --verify` →
+  **Team ID == `V8SAC4GCQQ`** → `spctl` notarization; rejects a wrong-Team-ID
+  bundle even if validly notarized. Team-ID/notarization is the trust anchor,
+  not the checksum (documented in [07-auto-update.md](07-auto-update.md)).
+- [x] `app_update.go` bindings (`CheckForUpdate` / `DownloadAndVerifyUpdate` /
+  `InstallUpdate` / `Get|SetUpdatePref`) and the frontend
+  (`lib/updater.ts` + `UpdateBanner.tsx`): a slim dismissible banner with a
+  one-click **Update → Restart to update**, a guided DMG fallback when the app
+  can't self-replace, and a Settings row (current version, manual check,
+  auto-check opt-out). Compiles clean (`go build`/`vet`, `tsc`, `vite build`).
+- [x] Opt-out "check on launch" preference persisted in the updater's **own**
+  app-support file, with **zero changes to the shared settings schema**.
+- [ ] **Not yet wired into the running app or shipped.** Mounting `UpdateBanner`
+  in `App.tsx` + calling `initUpdateCheck()` onMount is a few-line integration
+  owned by the integrator (see the build's INTEGRATION NOTES). And the two
+  OS-level steps that a unit test can't exercise — `hdiutil`/`spctl` against a
+  real notarized DMG, and the quit-swap-relaunch handoff — want one manual pass
+  against an actual signed `AUK-x.y.z.dmg` before the first paid release relies
+  on the fully-automatic path (the guided fallback is the safe floor until then).
+  Marking the mechanics built, **not** the feature shipped.

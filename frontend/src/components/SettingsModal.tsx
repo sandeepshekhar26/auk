@@ -4,6 +4,8 @@ import { setTheme, themePref } from '../lib/theme'
 import type { ThemePref } from '../lib/theme'
 import { wails } from '../lib/wails'
 import { copyText } from '../lib/clipboard'
+import LicenseSection from './LicenseSection'
+import { UpdateSettingRow } from './UpdateBanner'
 
 interface MCPStatus {
   running: boolean
@@ -122,6 +124,20 @@ export default function SettingsModal() {
                 </For>
               </div>
               <p class="mt-2 text-xs text-ink-faint">Saved to ~/.auk/settings.yaml</p>
+            </section>
+
+            <section>
+              <h3 class="text-xs font-medium uppercase tracking-wide text-ink-muted">License</h3>
+              <div class="mt-2">
+                <LicenseSection />
+              </div>
+            </section>
+
+            <section>
+              <h3 class="text-xs font-medium uppercase tracking-wide text-ink-muted">Updates</h3>
+              <div class="mt-2">
+                <UpdateSettingRow />
+              </div>
             </section>
 
             <section>

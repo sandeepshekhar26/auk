@@ -14,10 +14,14 @@ import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
 import McpToolView from './components/McpToolView'
 import FolderRunView from './components/FolderRunView'
-import { appState, closeTab, cycleTab, folderRunView, initSidebar, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals } from './lib/store'
+import UpdateBanner from './components/UpdateBanner'
+import TrialBadge from './components/TrialBadge'
+import { appState, closeTab, cycleTab, folderRunView, initSidebar, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals, setSettingsOpen } from './lib/store'
 import { events, wails } from './lib/wails'
 import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
+import { initLicense, licenseStatus } from './lib/license'
+import { initUpdateCheck } from './lib/updater'
 import type { MCPApproval } from './lib/store'
 import type { ResponseData } from './types'
 
@@ -31,6 +35,14 @@ export default function App() {
     // reads the same settings for sidebarMode (docked vs overlay).
     initTheme().catch(() => {})
     initSidebar().catch(() => {})
+    // Licensing: records the trial start on first launch and loads current
+    // status (StartTrialIfNeeded is idempotent and called inside initLicense).
+    // Never blocks data loading, and degrades to "no badge" if the binding
+    // isn't there yet (pre-regeneration dev).
+    initLicense().catch(() => {})
+    // Auto-update: silent launch check; no-ops in dev builds or when the
+    // user has turned auto-check off.
+    initUpdateCheck().catch(() => {})
     loadAll().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))
     // App-scoped MCP approval listener (see MCPApprovalModal for why it lives
     // here, not in the leaf component). Never cleaned up — the app owns it for
@@ -91,6 +103,14 @@ export default function App() {
   }
 
   async function handleSend(requestId: string) {
+    // Enforce the soft licence gate at the ACTION, not just on the button —
+    // ⌘Enter and the command palette reach here too. A gated send opens
+    // Settings → License instead of firing.
+    const lic = licenseStatus()
+    if (lic?.state === 'trial_expired' || lic?.state === 'license_invalid') {
+      setSettingsOpen(true)
+      return
+    }
     setSending(true)
     try {
       // Flush any pending debounced edit first: SendRequest resolves the
@@ -144,6 +164,7 @@ export default function App() {
           mode it renders position:fixed and this slot is empty. */}
       <Sidebar />
       <div class="relative flex flex-1 flex-col overflow-hidden">
+        <UpdateBanner />
         <Show when={loadError()}>
           <div class="flex items-center justify-between border-b border-danger-edge bg-danger-bg/60 px-3 py-1 text-xs text-danger">
             <span>{loadError()}</span>
@@ -161,6 +182,7 @@ export default function App() {
             {appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)?.name ?? ''}
           </span>
           <div class="flex items-center gap-2">
+            <TrialBadge onClick={() => setSettingsOpen(true)} />
             <EnvironmentSelector />
           </div>
         </div>

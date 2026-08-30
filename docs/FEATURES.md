@@ -255,3 +255,22 @@ needs a challenge-response retry loop that doesn't fit this app's auth
 model the way every other method here does), distributed k6, fuller git
 (branch/merge/diff — today is status + log + commit + push), and MCP
 resources/prompts (tools only, today).
+
+## In-app auto-update
+
+AUK updates itself. On launch (opt-out, default on) it asks the GitHub
+Releases API whether a newer signed DMG exists; if so, a slim dismissible
+banner offers **Update**. One click downloads the DMG, **verifies it end to
+end** — checksum (when the release publishes one), code-signature integrity,
+that it carries *our* Developer ID Team ID (`V8SAC4GCQQ`), and Apple
+notarization — then swaps the verified bundle in and relaunches. Anything not
+signed by our Developer ID and notarized is refused: the Team-ID/notarization
+check, not a checksum, is the real anti-tamper guarantee (an attacker in the
+download path could forge a matching hash, but not a notarized bundle under our
+Team ID). If AUK can't replace itself in place (an unwritable location), it
+falls back to opening the verified DMG for a manual drag-install — never a
+silent failure. Dev builds never nag (the running version is read from the
+bundle's `CFBundleShortVersionString`; a `wails dev` build and any `0.0.0-dev`
+build both read as "not behind"). The feed is behind an abstraction so a
+self-hosted **signed appcast** can replace GitHub Releases later without
+touching the download/verify/UI code. See [07-auto-update.md](07-auto-update.md).

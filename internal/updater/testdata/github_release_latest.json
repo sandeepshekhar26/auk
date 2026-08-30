@@ -1,0 +1,19 @@
+{
+  "url": "https://api.github.com/repos/sandeepshekhar26/auk/releases/1",
+  "html_url": "https://github.com/sandeepshekhar26/auk/releases/tag/v0.3.0",
+  "tag_name": "v0.3.0",
+  "name": "AUK v0.3.0 — k6 in-app, docked sidebar, copy-as, path params",
+  "draft": false,
+  "prerelease": false,
+  "created_at": "2026-08-20T00:00:00Z",
+  "published_at": "2026-08-20T00:00:00Z",
+  "body": "**AUK v0.3.0** — the Postman-parity release.\n\n### New in this release\n- k6 ships inside the app.\n- Docked sidebar, copy-as, path params.\n\n### Install\nDownload **AUK-0.3.0.dmg** below, open it, and drag AUK to Applications. Signed & notarized by Developer ID.\n\n```\nSHA-256  e99cee33a3ddfff37c3be66e461dc9384a6f12d66c7a2e837533ff013b03c05e\n```\n\n🤖 Generated with Claude Code",
+  "assets": [
+    {
+      "name": "AUK-0.3.0.dmg",
+      "content_type": "application/x-apple-diskimage",
+      "size": 43867463,
+      "browser_download_url": "https://github.com/sandeepshekhar26/auk/releases/download/v0.3.0/AUK-0.3.0.dmg"
+    }
+  ]
+}
