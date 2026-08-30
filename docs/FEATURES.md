@@ -274,3 +274,28 @@ bundle's `CFBundleShortVersionString`; a `wails dev` build and any `0.0.0-dev`
 build both read as "not behind"). The feed is behind an abstraction so a
 self-hosted **signed appcast** can replace GitHub Releases later without
 touching the download/verify/UI code. See [07-auto-update.md](07-auto-update.md).
+
+## Response preview & save
+
+The response viewer renders more than text. When a response comes back as an
+image (`image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/svg+xml`)
+it's shown inline as an actual image; when it's `text/html` it's rendered in a
+**fully sandboxed** iframe (`sandbox=""` — no scripts, no forms, no same-origin
+access, so a returned page can never execute JS in the app's own origin). The
+rich preview is auto-selected from the `Content-Type`, with a one-click
+**Preview / Raw** toggle back to the syntax-highlighted source at any time — the
+pretty/raw JSON view, the JSONPath filter, diff-vs-previous, and in-body search
+all stay exactly as they were for every other content type.
+
+**Save response body**: a **Save** button in the response toolbar writes the
+decoded body to a file through a native save dialog. The default filename comes
+from the request name plus an extension guessed from the response
+`Content-Type` (`.json`, `.html`, `.png`, `.svg`, `.xml`, `.txt`, …). The
+decode-and-write runs in Go against the backend's stored last response, so no
+base64 blob is round-tripped back down just to save it.
+
+**Postman import — path variables**: importing a Postman collection now maps a
+URL's `:name` path variables (Postman's per-URL `variable` array) into AUK's
+Path params. An imported `/users/:id` request lands with its `id` Path row
+pre-filled from the collection, and the raw URL keeps its `:id` tokens so the
+editor's derived rows and the imported values line up.

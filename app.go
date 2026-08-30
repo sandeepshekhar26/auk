@@ -44,6 +44,16 @@ type App struct {
 	perfMu      sync.Mutex
 	perfCancels map[string]context.CancelFunc
 
+	// sendCancels lets CancelSend abort an in-flight one-shot request (a slow
+	// or hung HTTP/gRPC call) by request id — see SendRequest and app_cancel.go.
+	// The value is a POINTER so an entry can be compared by identity: two
+	// overlapping sends of the same request would otherwise let the first one
+	// to finish delete the second's still-live cancel, silently turning its
+	// Cancel button into a no-op (func values aren't comparable, hence the
+	// pointer wrapper).
+	sendMu      sync.Mutex
+	sendCancels map[string]*sendCancel
+
 	// Embedded MCP server state (Settings → MCP Server) — AUK acting as an
 	// MCP SERVER, exposing its own tools to Claude.
 	mcpMu    sync.Mutex
@@ -96,6 +106,7 @@ func NewApp() *App {
 		store:        store,
 		engine:       engine,
 		perfCancels:  map[string]context.CancelFunc{},
+		sendCancels:  map[string]*sendCancel{},
 		mcpClients:   map[string]*mcpclient.Client{},
 		mcpConnLocks: map[string]*sync.Mutex{},
 		approvals:    map[string]chan bool{},
@@ -319,7 +330,32 @@ func (a *App) DeleteCookie(workspaceID, name string) {
 // MCP-initiated run, which will use a stricter PolicyEngine.
 func (a *App) SendRequest(requestID string, environmentID string) (model.ResponseData, error) {
 	sessionID := uuid.NewString()
-	return a.engine.RunRequest(a.ctx, sessionID, requestID, environmentID, "gui", core.NoopSink{})
+
+	// Wrap the app context so CancelSend can abort THIS request (a hung or slow
+	// HTTP/gRPC call) without touching any other in-flight send. Registered by
+	// request id; a second send of the same request cancels the first's still-
+	// registered context is NOT what we want, so the map is only cleared by the
+	// owning call's defer — keying by requestID is fine because the GUI can't
+	// have two concurrent sends of the same request (the button is disabled
+	// while sending).
+	ctx, cancel := context.WithCancel(a.ctx)
+	entry := &sendCancel{cancel: cancel}
+	a.sendMu.Lock()
+	a.sendCancels[requestID] = entry
+	a.sendMu.Unlock()
+	defer func() {
+		a.sendMu.Lock()
+		// Delete only if the entry is STILL ours: if an overlapping send of the
+		// same request replaced it, that send is still running and owns the
+		// slot — removing it here would leave it uncancellable.
+		if a.sendCancels[requestID] == entry {
+			delete(a.sendCancels, requestID)
+		}
+		a.sendMu.Unlock()
+		cancel()
+	}()
+
+	return a.engine.RunRequest(ctx, sessionID, requestID, environmentID, "gui", core.NoopSink{})
 }
 
 // RunFolder sequentially sends every request inside folderID — recursing

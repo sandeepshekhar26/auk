@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { confirmDialog } from '../lib/confirm'
 import { appState, setAppState, environmentEditorOpen, setEnvironmentEditorOpen } from '../lib/store'
 import { wails } from '../lib/wails'
 import { model } from '../../wailsjs/go/models'
@@ -95,7 +96,13 @@ export default function EnvironmentEditor() {
   async function deleteEnvironment(id: string) {
     const env = appState.environments.find((e) => e.id === id)
     if (!env) return
-    if (!confirm(`Delete environment "${env.name}"? This cannot be undone.`)) return
+    const ok = await confirmDialog({
+      title: `Delete environment "${env.name}"?`,
+      body: 'This cannot be undone.',
+      confirmText: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     // A draft created this session but never saved has no backend row yet
     // (isNew mirrors save()'s own Create-vs-Update branch) — nothing to
     // delete there, so skip the round trip.

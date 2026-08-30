@@ -122,12 +122,28 @@ const TABS: { id: EditorTab; label: string }[] = [
   { id: 'perf', label: 'Perf' },
 ]
 
-export default function RequestEditor(props: { onSend: (requestId: string) => void }) {
+export default function RequestEditor(props: {
+  onSend: (requestId: string) => void
+  // Predicate rather than a single id: multiple sends can be in flight at
+  // once, so the editor asks "is THIS request sending?" per render.
+  isSending?: (id: string) => boolean
+  onCancel?: (id: string) => void
+}) {
   const [tab, setTab] = createSignal<EditorTab>('params')
   const [composeText, setComposeText] = createSignal('')
+  // Description/notes area visibility. Opens automatically for a request that
+  // already has notes so they're not hidden, but stays a manual toggle
+  // otherwise to keep the editor uncluttered.
+  const [descOpen, setDescOpen] = createSignal(false)
 
   const activeIndex = createMemo(() => appState.requests.findIndex((r) => r.id === appState.activeTabId))
   const active = createMemo(() => appState.requests.find((r) => r.id === appState.activeTabId))
+
+  // Auto-open the notes area for a request that already has a description, so
+  // saved notes aren't hidden behind a toggle; otherwise it stays collapsed.
+  createEffect(() => {
+    if ((active()?.description?.trim().length ?? 0) > 0) setDescOpen(true)
+  })
 
   // Soft licence gate: once the trial has ended (or a stored licence fails to
   // verify), block the two request-INITIATING actions (Send / Connect) —
@@ -364,7 +380,28 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
               placeholder="Untitled request"
               onInput={(e) => setAppState('requests', activeIndex(), 'name', e.currentTarget.value)}
             />
+            <button
+              class="shrink-0 rounded px-1.5 py-0.5 text-xs"
+              classList={{
+                'text-accent-fg': (req().description?.trim().length ?? 0) > 0,
+                'text-ink-faint hover:text-ink-dim': (req().description?.trim().length ?? 0) === 0,
+              }}
+              title={descOpen() ? 'Hide description' : 'Add a description'}
+              onClick={() => setDescOpen((v) => !v)}
+            >
+              {(req().description?.trim().length ?? 0) > 0 ? '≡ Notes' : '＋ Notes'}
+            </button>
           </div>
+          <Show when={descOpen()}>
+            <div class="border-b border-edge px-2 py-1.5">
+              <textarea
+                class="min-h-[3rem] w-full resize-y rounded bg-field px-2 py-1 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-edge-strong"
+                placeholder="Describe this request — what it does, gotchas, example values… (versioned with the request in git)"
+                value={req().description ?? ''}
+                onInput={(e) => setAppState('requests', activeIndex(), 'description', e.currentTarget.value)}
+              />
+            </div>
+          </Show>
           <div class="flex items-center gap-2 border-b border-edge p-2">
             <select
               class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge-strong"
@@ -396,16 +433,15 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
             <Show
               when={isStreamingProtocol(req().protocol || 'http', isGrpcServerStreaming(req().id))}
               fallback={
-                <Show
-                  when={!sendGated()}
-                  fallback={<ActivateToSend />}
-                >
-                  <button
-                    class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
-                    onClick={() => props.onSend(req().id)}
-                  >
-                    Send
-                  </button>
+                <Show when={!props.isSending?.(req().id)} fallback={<CancelButton onCancel={() => props.onCancel?.(req().id)} />}>
+                  <Show when={!sendGated()} fallback={<ActivateToSend />}>
+                    <button
+                      class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
+                      onClick={() => props.onSend(req().id)}
+                    >
+                      Send
+                    </button>
+                  </Show>
                 </Show>
               }
             >
@@ -590,6 +626,21 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
 }
 
 // This app is built to be driven from the keyboard, so the empty state
+// Replaces Send while a one-shot request is in flight — a GUI send has no
+// deadline, so a hung endpoint needs an out. Clicking calls CancelSend, which
+// cancels the request's context and lets the response area show the cancelled
+// error instead of spinning forever.
+function CancelButton(props: { onCancel: () => void }) {
+  return (
+    <button
+      class="rounded border border-edge-strong bg-field px-3 py-1 text-sm font-medium text-danger hover:bg-raised"
+      onClick={() => props.onCancel()}
+    >
+      Cancel
+    </button>
+  )
+}
+
 // Shown in place of Send/Connect once the trial has ended: clicking opens
 // Settings → License rather than silently doing nothing, so the path to
 // keep working is one click away. Amber, not red — this is a nudge to buy,

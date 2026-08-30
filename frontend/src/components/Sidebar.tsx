@@ -1,4 +1,5 @@
 import { Index, Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Accessor, type JSX } from 'solid-js'
+import { confirmDialog } from '../lib/confirm'
 import {
   appState,
   setAppState,
@@ -277,16 +278,28 @@ export default function Sidebar() {
     if (sidebarMode() === 'overlay') setExplorerOpen(false)
   }
 
-  function confirmDeleteFolder(node: FolderNode) {
+  async function confirmDeleteFolder(node: FolderNode) {
     const folder = node.folder!
     const nested = countDescendants(node)
     const warning = nested > 0 ? ` This also deletes ${nested} item${nested === 1 ? '' : 's'} inside it.` : ''
-    if (!confirm(`Delete folder "${folder.name}"?${warning} This cannot be undone.`)) return
+    const ok = await confirmDialog({
+      title: `Delete folder "${folder.name}"?`,
+      body: `${warning ? warning.trim() + ' ' : ''}This cannot be undone.`,
+      confirmText: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     void deleteFolder(folder.id)
   }
 
-  function confirmDeleteRequest(req: RequestDef) {
-    if (!confirm(`Delete request "${req.name}"? This cannot be undone.`)) return
+  async function confirmDeleteRequest(req: RequestDef) {
+    const ok = await confirmDialog({
+      title: `Delete request "${req.name}"?`,
+      body: 'This cannot be undone.',
+      confirmText: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     void deleteRequest(req.id)
   }
 

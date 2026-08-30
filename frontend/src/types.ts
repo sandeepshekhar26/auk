@@ -28,6 +28,8 @@ export interface RequestDef {
   workspaceId: ID
   folderId: ID | null
   name: string
+  // Free-form notes/docs, versioned with the request. See Description in model.go.
+  description?: string
   protocol: ProtocolKind
   method: string
   url: string

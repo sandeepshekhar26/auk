@@ -12,6 +12,7 @@ import ImportCurlModal from './components/ImportCurlModal'
 import StreamConsole from './components/StreamConsole'
 import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
+import ConfirmDialog from './components/ConfirmDialog'
 import McpToolView from './components/McpToolView'
 import FolderRunView from './components/FolderRunView'
 import UpdateBanner from './components/UpdateBanner'
@@ -27,7 +28,36 @@ import type { ResponseData } from './types'
 
 export default function App() {
   const [response, setResponse] = createSignal<ResponseData | null>(null)
-  const [sending, setSending] = createSignal(false)
+  // Every request currently in flight, by id. A SET rather than a single slot:
+  // sends are startable per-tab and via ⌘Enter, so two can genuinely overlap —
+  // with one slot, starting B would clobber A's id, and A's completion would
+  // then clear B's in-flight state mid-flight (reverting B's Cancel button to
+  // Send, letting a second concurrent B start, and leaving B uncancellable).
+  const [sendingIds, setSendingIds] = createSignal<ReadonlySet<string>>(new Set())
+  const isSending = (id: string | undefined) => (id ? sendingIds().has(id) : false)
+  // The response pane's spinner tracks the ACTIVE tab only — a background
+  // send finishing shouldn't change what the foreground request shows.
+  const sending = () => isSending(appState.activeTabId ?? undefined)
+
+  function markSending(id: string, on: boolean) {
+    setSendingIds((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  function cancelSend(requestId: string) {
+    if (isSending(requestId)) wails.CancelSend(requestId)
+  }
+
+  // The response pane holds ONE response, so a send that finishes while the
+  // user is looking at a different request must not hijack the view. (The
+  // result still lands in history either way.)
+  function showIfStillActive(requestId: string, data: ResponseData) {
+    if (appState.activeTabId === requestId) setResponse(data)
+  }
 
   onMount(() => {
     // Theme first so the correct colors paint before data arrives; a
@@ -111,7 +141,12 @@ export default function App() {
       setSettingsOpen(true)
       return
     }
-    setSending(true)
+    // Re-entry guard: the Send button is REPLACED by Cancel while in flight,
+    // so the only way to re-fire the same request is ⌘Enter — which would
+    // otherwise start a second concurrent run whose cancel registration
+    // clobbers the first's in the backend, leaving neither cancellable.
+    if (isSending(requestId)) return
+    markSending(requestId, true)
     try {
       // Flush any pending debounced edit first: SendRequest resolves the
       // request from the backend store, so without this a quick edit-then-send
@@ -121,9 +156,9 @@ export default function App() {
       const result = await wails.SendRequest(requestId, appState.activeEnvironmentId ?? '')
       // Wails widens Go's string-enum fields (assertion source/operator) to
       // `string`; the backend only ever emits valid enum values.
-      setResponse(result as unknown as ResponseData)
+      showIfStillActive(requestId, result as unknown as ResponseData)
     } catch (err) {
-      setResponse({
+      showIfStillActive(requestId, {
         requestId,
         status: 0,
         statusText: 'Error',
@@ -135,7 +170,7 @@ export default function App() {
         error: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setSending(false)
+      markSending(requestId, false)
       // The backend appends a history entry on any completed run (even a
       // non-2xx response) — refresh so HistoryPanel isn't stuck showing
       // stale data from whenever the app last loaded.
@@ -198,7 +233,7 @@ export default function App() {
               <RequestTabBar />
               <div class="flex flex-1 overflow-hidden">
                 <div class="flex-1 overflow-hidden">
-                  <RequestEditor onSend={handleSend} />
+                  <RequestEditor onSend={handleSend} isSending={isSending} onCancel={cancelSend} />
                 </div>
                 <div class="w-[45%] overflow-hidden">
                   <ResponseViewer response={response()} loading={sending()} />
@@ -228,6 +263,7 @@ export default function App() {
       <StreamConsole />
       <SettingsModal />
       <MCPApprovalModal />
+      <ConfirmDialog />
     </div>
   )
 }

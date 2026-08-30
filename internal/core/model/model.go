@@ -150,10 +150,15 @@ type OAuth1Auth struct {
 }
 
 type RequestDef struct {
-	ID          ID           `yaml:"id" json:"id"`
-	WorkspaceID ID           `yaml:"workspaceId" json:"workspaceId"`
-	FolderID    *ID          `yaml:"folderId,omitempty" json:"folderId"`
-	Name        string       `yaml:"name" json:"name"`
+	ID          ID     `yaml:"id" json:"id"`
+	WorkspaceID ID     `yaml:"workspaceId" json:"workspaceId"`
+	FolderID    *ID    `yaml:"folderId,omitempty" json:"folderId"`
+	Name        string `yaml:"name" json:"name"`
+	// Description is free-form notes/docs for this request (Markdown-ish plain
+	// text), shown in the editor and versioned with the request — the place to
+	// record what an endpoint does, gotchas, or example values for teammates
+	// reading the git-stored collection.
+	Description string       `yaml:"description,omitempty" json:"description,omitempty"`
 	Protocol    ProtocolKind `yaml:"protocol" json:"protocol"`
 	Method      string       `yaml:"method" json:"method"`
 	URL         string       `yaml:"url" json:"url"`

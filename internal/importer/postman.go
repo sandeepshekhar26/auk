@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -22,8 +23,36 @@ type postmanInfo struct {
 }
 
 type postmanVar struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	Key string `json:"key"`
+	// Postman's v2.1 schema types variable[].value as `any`, and real
+	// collections (especially tool-generated or converted ones) routinely
+	// carry numbers and booleans, not just strings. Decoding into a `string`
+	// makes the ENCLOSING object fail to unmarshal on the first numeric
+	// value — which silently blanked the whole URL (and, for collection-level
+	// variables, could take the whole collection with it). RawMessage accepts
+	// any JSON, and scalarString renders it.
+	Value json.RawMessage `json:"value"`
+}
+
+// scalarString renders a Postman variable value as the plain string AUK
+// stores. Strings are unquoted; numbers/booleans are rendered literally
+// (42, true) as the user would have typed them; null and JSON objects/arrays
+// (never meaningful as a path-variable value) become "".
+func (v postmanVar) scalarString() string {
+	raw := bytes.TrimSpace(v.Value)
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	switch raw[0] {
+	case '{', '[':
+		return "" // structured values aren't usable as a variable value
+	default:
+		return string(raw) // number, true/false — render literally
+	}
 }
 
 // postmanItem is either a folder (has nested Item) or a request (has Request).
@@ -74,6 +103,11 @@ type postmanAuthKV struct {
 
 type postmanURLObject struct {
 	Raw string `json:"raw"`
+	// Variable carries the values for the `:name` path placeholders in Raw
+	// (Postman's model for path variables — e.g. Raw "/users/:id" with a
+	// Variable entry {id, 42}). Mapped to RequestDef.PathParams so the
+	// imported request lands with its Path row pre-filled.
+	Variable []postmanVar `json:"variable"`
 }
 
 // ParsePostman converts a Postman Collection v2/v2.1 into an ImportResult:
@@ -93,7 +127,7 @@ func ParsePostman(data []byte) (ImportResult, error) {
 	if len(col.Variable) > 0 {
 		env := model.Environment{ID: uuid.NewString(), Name: "Default"}
 		for _, v := range col.Variable {
-			env.Variables = append(env.Variables, model.KeyValue{Key: v.Key, Value: v.Value, Enabled: true})
+			env.Variables = append(env.Variables, model.KeyValue{Key: v.Key, Value: v.scalarString(), Enabled: true})
 		}
 		result.Environments = append(result.Environments, env)
 	}
@@ -139,14 +173,16 @@ func ParsePostman(data []byte) (ImportResult, error) {
 
 func postmanToRequest(it postmanItem, folderID *string, orderKey string) model.RequestDef {
 	r := it.Request
+	urlStr, pathParams := parsePostmanURL(r.URL)
 	req := model.RequestDef{
-		ID:       uuid.NewString(),
-		FolderID: folderID,
-		Name:     it.Name,
-		Protocol: model.ProtocolHTTP,
-		Method:   strings.ToUpper(orDefault(r.Method, "GET")),
-		URL:      postmanURL(r.URL),
-		OrderKey: orderKey,
+		ID:         uuid.NewString(),
+		FolderID:   folderID,
+		Name:       it.Name,
+		Protocol:   model.ProtocolHTTP,
+		Method:     strings.ToUpper(orDefault(r.Method, "GET")),
+		URL:        urlStr,
+		PathParams: pathParams,
+		OrderKey:   orderKey,
 	}
 	for _, h := range r.Header {
 		req.Headers = append(req.Headers, model.KeyValue{Key: h.Key, Value: h.Value, Enabled: !h.Disabled})
@@ -156,20 +192,37 @@ func postmanToRequest(it postmanItem, folderID *string, orderKey string) model.R
 	return req
 }
 
-// postmanURL handles both the string and object forms of a Postman url field.
-func postmanURL(raw json.RawMessage) string {
+// parsePostmanURL handles both the string and object forms of a Postman url
+// field. It returns the URL string with any `:name` path tokens preserved,
+// plus the path-variable VALUES Postman recorded in the object form's
+// `variable` array, mapped to AUK PathParams.
+//
+// AUK's request editor derives the `:name` Path rows from the URL itself, so
+// the URL and the PathParams have to agree: we keep Raw (which carries the
+// `:id` tokens) verbatim and only supply the values, so an imported
+// `/users/:id` with variable id=42 lands with its Path row pre-filled.
+func parsePostmanURL(raw json.RawMessage) (string, []model.KeyValue) {
 	if len(raw) == 0 {
-		return ""
+		return "", nil
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return convertPostmanVars(s)
+		// String form carries no separate variable list — the editor derives
+		// empty Path rows from any `:name` tokens in the URL string itself.
+		return convertPostmanVars(s), nil
 	}
 	var obj postmanURLObject
 	if err := json.Unmarshal(raw, &obj); err == nil {
-		return convertPostmanVars(obj.Raw)
+		var pathParams []model.KeyValue
+		for _, v := range obj.Variable {
+			if v.Key == "" {
+				continue
+			}
+			pathParams = append(pathParams, model.KeyValue{Key: v.Key, Value: v.scalarString(), Enabled: true})
+		}
+		return convertPostmanVars(obj.Raw), pathParams
 	}
-	return ""
+	return "", nil
 }
 
 // convertPostmanVars rewrites Postman's {{var}} syntax — which happens to

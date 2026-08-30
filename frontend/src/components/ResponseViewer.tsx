@@ -7,8 +7,8 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { unifiedMergeView } from '@codemirror/merge'
 import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
-import type { Assertion, AssertionResult, RedirectHop, ResponseData, TimingBreakdown } from '../types'
-import { appState } from '../lib/store'
+import type { Assertion, AssertionResult, KeyValue, RedirectHop, ResponseData, TimingBreakdown } from '../types'
+import { appState, setLoadError } from '../lib/store'
 import { wails } from '../lib/wails'
 import CopyAsMenu from './CopyAsMenu'
 
@@ -31,6 +31,33 @@ function decodeBody(bodyBase64: string): string {
   } catch {
     return ''
   }
+}
+
+// Image MIME types AUK renders inline as an <img> data: URI preview.
+const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'])
+
+// Case-insensitive first-match header lookup (HTTP header names are
+// case-insensitive); returns '' when absent or when headers is null (a gRPC
+// summary response carries no Headers at all).
+function headerValue(headers: KeyValue[] | null | undefined, name: string): string {
+  if (!headers) return ''
+  const lower = name.toLowerCase()
+  for (const h of headers) if (h.key.toLowerCase() === lower) return h.value
+  return ''
+}
+
+// SaveResponseBody is a Go binding added in app_files.go. Wails regenerates the
+// typed wrapper in frontend/wailsjs/go/main/App.{d.ts,js} on the next `wails
+// dev`/build (and binds it at runtime by reflecting over App's exported
+// methods), at which point `wails.SaveResponseBody` is statically typed. Until
+// that regeneration runs we reach it through a locally-typed view of the
+// bindings module so tsc and the bundler stay green. See INTEGRATION NOTES.
+function saveResponseBodyBinding(requestId: string, bodyBase64: string, contentType: string): Promise<string> {
+  return (
+    wails as unknown as {
+      SaveResponseBody(requestId: string, bodyBase64: string, contentType: string): Promise<string>
+    }
+  ).SaveResponseBody(requestId, bodyBase64, contentType)
 }
 
 function tryPrettyJson(raw: string): { pretty: string | null; isJson: boolean } {
@@ -107,6 +134,10 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
   const [filterPath, setFilterPath] = createSignal('')
   const [filterState, setFilterState] = createSignal<{ result: string; error: string | null }>({ result: '', error: null })
   const filterActive = createMemo(() => filterPath().trim().length > 0)
+  // A previewable body (image/HTML) auto-shows its rendered form; the
+  // Preview/Raw toggle flips back to the source editor. Reset to shown on every
+  // new response by the on(() => props.response) effect below.
+  const [showPreview, setShowPreview] = createSignal(true)
 
   const [editorHost, setEditorHost] = createSignal<HTMLDivElement>()
   let view: EditorView | undefined
@@ -127,12 +158,29 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
           setFilterPath('')
         }
         setHasPrior(priorBody.length > 0)
+        // Default a newly-arrived previewable body (image/HTML) to its rendered
+        // form; harmless for non-previewable bodies (renderedPreview() stays
+        // false when previewKind() is 'none').
+        setShowPreview(true)
       },
     ),
   )
 
   const rawBody = createMemo(() => decodeBody(props.response?.bodyBase64 ?? ''))
   const jsonInfo = createMemo(() => tryPrettyJson(rawBody()))
+
+  // Content-Type-driven rich preview. mimeType strips any ";charset=…"
+  // parameter; previewKind decides whether the body renders as an inline image,
+  // a sandboxed HTML iframe, or falls through to the existing text views.
+  const contentType = createMemo(() => headerValue(props.response?.headers, 'content-type'))
+  const mimeType = createMemo(() => contentType().split(';')[0]?.trim().toLowerCase() ?? '')
+  const previewKind = createMemo<'image' | 'html' | 'none'>(() => {
+    const m = mimeType()
+    if (IMAGE_MIME.has(m)) return 'image'
+    if (m === 'text/html') return 'html'
+    return 'none'
+  })
+  const renderedPreview = createMemo(() => previewKind() !== 'none' && showPreview())
 
   // Debounced (150ms) so a fast typist filtering a large body doesn't fire
   // one JSONPathFilter IPC call per keystroke; `cancelled` guards against a
@@ -236,6 +284,23 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
     }
   }
 
+  // Save the response body to a file the user picks in a native dialog. The
+  // decode + write happen in Go (app_files.go), but the BYTES come from the
+  // response this pane is currently showing rather than the backend's
+  // last-response cache: a folder run or an MCP-driven call can overwrite that
+  // cache for the same request id without changing what's on screen, and a
+  // save must never write something the user isn't looking at. A cancelled
+  // dialog returns '' (no error); only a genuine failure surfaces via loadError.
+  async function saveResponseBody(requestId: string) {
+    const res = props.response
+    if (!res) return
+    try {
+      await saveResponseBodyBinding(requestId, res.bodyBase64 ?? '', headerValue(res.headers ?? [], 'content-type'))
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   onMount(() => window.addEventListener('apitool:search-body', openSearch))
   onCleanup(() => {
     window.removeEventListener('apitool:search-body', openSearch)
@@ -271,7 +336,16 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                     It resolves the request from the backend rather than from
                     this response, so the two always agree and neither needs a
                     prior send. */}
-                <div class="ml-auto">
+                <div class="ml-auto flex items-center gap-2">
+                  <Show when={res().bodySize > 0}>
+                    <button
+                      class="rounded px-2 py-0.5 text-[11px] text-ink-muted hover:bg-raised hover:text-ink-dim"
+                      onClick={() => void saveResponseBody(res().requestId)}
+                      title="Save response body to a file"
+                    >
+                      Save
+                    </button>
+                  </Show>
                   <CopyAsMenu requestId={activeRequest()?.id} protocol={activeRequest()?.protocol} />
                 </div>
               </div>
@@ -372,14 +446,40 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
 
                 <Show when={tab() === 'body'}>
                   <div class="ml-auto flex items-center gap-1">
-                    <button
-                      class="rounded px-2 py-0.5 text-[11px] text-ink-muted hover:bg-raised hover:text-ink-dim"
-                      onClick={openSearch}
-                      title="Search in body (⌘F)"
-                    >
-                      Search
-                    </button>
-                    <Show when={hasPrior() && !filterActive()}>
+                    <Show when={previewKind() !== 'none'}>
+                      <div class="flex items-center gap-1 rounded bg-field p-0.5">
+                        <button
+                          class="rounded px-2 py-0.5 text-[11px]"
+                          classList={{
+                            'bg-elevated text-ink': showPreview(),
+                            'text-ink-muted hover:text-ink-dim': !showPreview(),
+                          }}
+                          onClick={() => setShowPreview(true)}
+                        >
+                          Preview
+                        </button>
+                        <button
+                          class="rounded px-2 py-0.5 text-[11px]"
+                          classList={{
+                            'bg-elevated text-ink': !showPreview(),
+                            'text-ink-muted hover:text-ink-dim': showPreview(),
+                          }}
+                          onClick={() => setShowPreview(false)}
+                        >
+                          Raw
+                        </button>
+                      </div>
+                    </Show>
+                    <Show when={!renderedPreview()}>
+                      <button
+                        class="rounded px-2 py-0.5 text-[11px] text-ink-muted hover:bg-raised hover:text-ink-dim"
+                        onClick={openSearch}
+                        title="Search in body (⌘F)"
+                      >
+                        Search
+                      </button>
+                    </Show>
+                    <Show when={hasPrior() && !filterActive() && previewKind() === 'none'}>
                       <button
                         class="rounded px-2 py-0.5 text-[11px]"
                         classList={{
@@ -442,13 +542,45 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
               </Show>
 
               <div class="flex-1 overflow-hidden" classList={{ hidden: tab() !== 'body' }}>
-                <Show when={filterActive() && filterState().error}>
+                {/* Rich preview auto-selected by Content-Type (inline image or
+                    rendered HTML). The Preview/Raw toggle above flips back to
+                    the source editor, which stays mounted (just hidden) so its
+                    search state survives the toggle. */}
+                <Show when={renderedPreview()}>
+                  <Show when={previewKind() === 'image'}>
+                    <div class="flex h-full items-center justify-center overflow-auto p-4">
+                      <img
+                        src={`data:${mimeType()};base64,${res().bodyBase64}`}
+                        alt="Response preview"
+                        class="max-h-full max-w-full object-contain"
+                      />
+                    </div>
+                  </Show>
+                  <Show when={previewKind() === 'html'}>
+                    {/* sandbox="" (an empty token list) neutralizes ALL script
+                        execution, form submission, popups, and same-origin
+                        access: a response body must never run as live JS in the
+                        app's origin. srcdoc renders the returned markup inertly. */}
+                    <iframe
+                      class="h-full w-full border-0 bg-white"
+                      sandbox=""
+                      srcdoc={rawBody()}
+                      title="Rendered HTML response"
+                    />
+                  </Show>
+                </Show>
+
+                <Show when={!renderedPreview() && filterActive() && filterState().error}>
                   <div class="border-b border-edge bg-danger-bg/40 px-2 py-1 font-mono text-[11px] text-danger">
                     {filterState().error}
                   </div>
                 </Show>
-                <div ref={setEditorHost} class="h-full overflow-auto" classList={{ hidden: displayText().length === 0 }} />
-                <Show when={displayText().length === 0 && !(filterActive() && filterState().error)}>
+                <div
+                  ref={setEditorHost}
+                  class="h-full overflow-auto"
+                  classList={{ hidden: renderedPreview() || displayText().length === 0 }}
+                />
+                <Show when={!renderedPreview() && displayText().length === 0 && !(filterActive() && filterState().error)}>
                   <div class="p-3 text-sm text-ink-faint">
                     {filterActive() ? 'No value at this path yet.' : 'Empty response body.'}
                   </div>
