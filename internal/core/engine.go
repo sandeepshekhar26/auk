@@ -25,6 +25,13 @@ type ResolvedRequest struct {
 	Headers []model.KeyValue
 	Params  []model.KeyValue
 	Body    *model.RequestBody
+	// PathParams are the request's `:name` path-placeholder values with
+	// their own templates already expanded (so a value can itself be
+	// `${userId}`). The Templater fills these in; the engine consumes them
+	// in resolveAndAuthorize to rewrite URL, so by the time a Protocol sees
+	// this ResolvedRequest the substitution is already baked into URL and
+	// no protocol has to know placeholders exist.
+	PathParams []model.KeyValue
 }
 
 // Templater resolves `${func(args)}` / response() references against an
@@ -254,6 +261,14 @@ func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, en
 	if err != nil {
 		return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("resolve templates: %w", err)
 	}
+
+	// `:name` path placeholders are substituted here — AFTER `${...}`
+	// templating (so both the URL and the values themselves are already
+	// expanded) and BEFORE auth, so a signing scheme signs the real path
+	// and the policy chokepoint below sees the real URL. Every consumer of
+	// the resolve path inherits it: Send, RunFolder, the CLI, the k6 perf
+	// runner (ResolveForExecution), and Copy-as-code (ResolveForSnippet).
+	resolved.URL = applyPathParams(req.Protocol, resolved.URL, resolved.PathParams)
 
 	if req.Auth != nil && req.Auth.Kind != model.AuthNone {
 		resolved, err = e.Auth.Apply(ctx, *req.Auth, resolved)

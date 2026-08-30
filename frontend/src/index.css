@@ -45,6 +45,21 @@
   --color-warn-edge: 120 53 15;
   --color-info: 56 189 248;
   --color-keyword: 167 139 250; /* syntax highlighting: booleans, GraphQL keywords */
+
+  /* HTTP method + protocol hues (sidebar tree, tabs, history). Fixed
+     per-method colors are the tree's primary legibility device, so they get
+     real tokens — never hardcoded hex in JSX — and each theme tunes them
+     for its own background (400-range on dark, 700-range on light). */
+  --color-method-get: 52 211 153; /* emerald */
+  --color-method-post: 251 191 36; /* amber */
+  --color-method-put: 96 165 250; /* blue */
+  --color-method-patch: 167 139 250; /* violet */
+  --color-method-delete: 248 113 113; /* red */
+  --color-method-misc: 148 163 184; /* HEAD/OPTIONS/unknown: slate */
+  --color-proto-ws: 34 211 238; /* cyan */
+  --color-proto-gql: 244 114 182; /* pink */
+  --color-proto-sse: 251 146 60; /* orange */
+  --color-proto-grpc: 45 212 191; /* teal */
 }
 
 [data-theme='light'] {
@@ -77,6 +92,17 @@
   --color-warn-edge: 253 230 138;
   --color-info: 2 132 199;
   --color-keyword: 124 58 237;
+
+  --color-method-get: 4 120 87;
+  --color-method-post: 180 83 9;
+  --color-method-put: 29 78 216;
+  --color-method-patch: 109 40 217;
+  --color-method-delete: 185 28 28;
+  --color-method-misc: 71 85 105;
+  --color-proto-ws: 14 116 144;
+  --color-proto-gql: 190 24 93;
+  --color-proto-sse: 194 65 12;
+  --color-proto-grpc: 15 118 110;
 }
 
 html,

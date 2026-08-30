@@ -87,6 +87,9 @@ func NewFileStore(rootDir string, opts ...FileStoreOption) (*FileStore, error) {
 	if err := fs.loadAll(); err != nil {
 		return nil, fmt.Errorf("load workspaces: %w", err)
 	}
+	// One-time self-heal for legacy/invalid order keys (old "a0" seeds and
+	// duplicate-key ties) — see orderkey_heal.go.
+	fs.healOrderKeys()
 	return fs, nil
 }
 
@@ -177,6 +180,15 @@ func (s *FileStore) loadWorkspace(workspaceID model.ID) error {
 func (s *FileStore) PutWorkspace(w model.Workspace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if w.OrderKey == "" {
+		last := ""
+		for _, existing := range s.workspaces {
+			if existing.OrderKey > last {
+				last = existing.OrderKey
+			}
+		}
+		w.OrderKey = OrderKeyBetween(last, "")
+	}
 	if err := writeYAMLFile(workspaceFile(s.rootDir, w.ID), w); err != nil {
 		return err
 	}

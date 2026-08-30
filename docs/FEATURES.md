@@ -9,8 +9,11 @@ drive the app directly), and an **MCP client debugger** (so you can inspect
 *any* MCP server's tools from inside AUK).
 
 All screenshots below are real, captured from a running build — not mockups.
-There's no screen-recorded demo video, but this looping GIF walks through
-every feature below using those same screenshots:
+**They predate the navigation redesign**: they show the old icon-glyph rail
+and pop-over request drawer, while current builds have a docked, resizable
+sidebar with color-coded method badges (see "Navigation" below). Everything
+else in them is current. There's no screen-recorded demo video, but this
+looping GIF walks through every feature below using those same screenshots:
 
 ![Feature walkthrough](screenshots/walkthrough.gif)
 
@@ -71,6 +74,13 @@ into the binary — k6 is AGPLv3, so this is a deliberate boundary) and turns
 any saved request into a load test: executor, virtual users, duration, and
 SLA thresholds, right next to the request you're already editing.
 
+k6 ships **inside the app** — the release bundles the unmodified official k6
+v0.54.0 binary at `AUK.app/Contents/Resources/bin/k6` under AGPLv3, as a
+separate program AUK only ever exec's (never linked, embedded, or
+`xk6`-compiled), with its license and notice alongside it. There is nothing
+to install; if a build ever arrives without it, the load-test panel offers a
+one-click, checksum-verified download of the same pinned release.
+
 ![Perf test config](screenshots/perf-test-config.jpg)
 
 Results stream in live (req/s and p95 on the chart as the test runs) and
@@ -120,11 +130,29 @@ with a history of calls made this session:
 
 ![MCP client — tool result](screenshots/mcp-tool-result.jpg)
 
+### Navigation: docked sidebar + icon rail
+
+*(No screenshot yet — the images on this page predate this redesign.)*
+
+A persistent, drag-resizable sidebar (the layout Postman/Insomnia/Yaak
+users already know) sits next to a slim icon rail that switches its
+sections: Requests, History, Git, MCP, Cookies. The request tree
+color-codes every method (GET/POST/PUT/PATCH/DELETE each get a fixed hue;
+WebSocket/GraphQL/SSE/gRPC show as protocol chips), supports full keyboard
+navigation (↑↓→← to move and fold, Enter to open, F2 to rename, ⌘⌫ to
+delete), right-click context menus (open, duplicate, rename, delete, new
+request here, run folder), and drag & drop reordering — including dropping
+a request onto a folder to move it inside. `⌘B` collapses the sidebar;
+picking a request keeps it open. Purists can switch the sidebar to the
+original auto-hiding **overlay mode** with the pin toggle in its header
+(persisted in settings).
+
 ### Keyboard-first: the command palette
 
-`⌘K` reaches everything — jump to a request, browse history, import,
-switch theme, open settings — without leaving the keyboard. `⌘N` for a new
-request, `⌘B` to browse, `⌘,` for settings.
+`⌘K` reaches everything — jump to a request, run a command (new request or
+folder, duplicate, toggle sidebar, import, switch theme, open settings) —
+without leaving the keyboard. `⌘N` for a new request, `⌘B` to toggle the
+sidebar, `⌘,` for settings.
 
 ![Command palette](screenshots/command-palette.jpg)
 
@@ -193,6 +221,12 @@ with an approval prompt gating mutating requests.
 
 **MCP client debugger**: connect to any MCP server (stdio or HTTP), browse
 its tools, test-invoke them with a JSON-Schema-driven form.
+
+**Navigation**: docked, resizable sidebar (default) or auto-hiding overlay
+drawer (opt-in, persisted per machine); icon rail for section switching;
+color-coded method badges and protocol chips; tree keyboard navigation,
+inline rename, right-click context menus, and drag & drop reordering
+persisted via fractional order keys (a reorder is a one-file YAML diff).
 
 **Theme**: System/Light/Dark, semantic CSS-variable tokens throughout (no
 raw palette classes), self-hosted Inter + JetBrains Mono fonts,

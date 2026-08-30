@@ -14,7 +14,7 @@ import SettingsModal from './components/SettingsModal'
 import MCPApprovalModal from './components/MCPApprovalModal'
 import McpToolView from './components/McpToolView'
 import FolderRunView from './components/FolderRunView'
-import { appState, closeTab, cycleTab, folderRunView, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals } from './lib/store'
+import { appState, closeTab, cycleTab, folderRunView, initSidebar, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals } from './lib/store'
 import { events, wails } from './lib/wails'
 import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData } from './lib/data'
 import { initTheme } from './lib/theme'
@@ -27,8 +27,10 @@ export default function App() {
 
   onMount(() => {
     // Theme first so the correct colors paint before data arrives; a
-    // settings-load failure must never block data loading.
+    // settings-load failure must never block data loading. initSidebar
+    // reads the same settings for sidebarMode (docked vs overlay).
     initTheme().catch(() => {})
+    initSidebar().catch(() => {})
     loadAll().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))
     // App-scoped MCP approval listener (see MCPApprovalModal for why it lives
     // here, not in the leaf component). Never cleaned up — the app owns it for
@@ -137,6 +139,10 @@ export default function App() {
   return (
     <div class="flex h-screen overflow-hidden">
       <ActivityRail />
+      {/* In docked mode (the default) Sidebar participates in this flex row
+          as a resizable panel between the rail and the editor; in overlay
+          mode it renders position:fixed and this slot is empty. */}
+      <Sidebar />
       <div class="relative flex flex-1 flex-col overflow-hidden">
         <Show when={loadError()}>
           <div class="flex items-center justify-between border-b border-danger-edge bg-danger-bg/60 px-3 py-1 text-xs text-danger">
@@ -191,9 +197,6 @@ export default function App() {
           </Match>
         </Switch>
 
-        {/* The explorer drawer is positioned fixed (see Sidebar.tsx) so it
-            overlays rather than pushing this layout — it can mount anywhere. */}
-        <Sidebar />
       </div>
 
       <CommandPalette />

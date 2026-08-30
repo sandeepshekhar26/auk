@@ -7,6 +7,48 @@ The structure is:
 * bin - Output directory
 * darwin - macOS specific files
 * windows - Windows specific files
+* sidecars - third-party binaries shipped alongside the app (k6); see `sidecars/README.md`
+
+## Releasing (macOS)
+
+`wails build` alone does **not** produce a shippable artifact: it emits an
+unsigned `build/bin/AUK.app` with nothing in `Contents/Resources` but the
+icon, so Gatekeeper blocks it on any other Mac and every load test fails with
+"k6 is not available".
+
+Use `scripts/release.sh` instead. It runs the whole pipeline:
+
+1. `wails build -clean` (and verifies the binary actually landed — Wails has
+   been seen to print "Done." without writing `Contents/MacOS/AUK`)
+2. `scripts/bundle-k6.sh` stages the pinned, checksum-verified k6 into
+   `Contents/Resources/bin/k6` together with `k6-LICENSE.txt` and
+   `k6-NOTICE.txt` (AGPL-3.0 obligations — see `sidecars/README.md`)
+3. codesigns the **nested k6 first**, then the app bundle with
+   `darwin/entitlements.plist`. Order matters: the bundle signature seals
+   everything inside it, so staging k6 afterwards would invalidate it.
+   `--deep` is deliberately not used
+4. notarizes + staples the app, builds a UDZO DMG with an `/Applications`
+   symlink, then signs + notarizes + staples the DMG
+5. verifies with `spctl -a`, `stapler validate`, and a k6 signature check
+
+Configuration is all environment variables — no secrets in the repo:
+`AUK_SIGN_IDENTITY`, `AUK_ASC_KEY_P8`, `AUK_ASC_KEY_ID`, `AUK_ASC_ISSUER`,
+`AUK_VERSION`, `AUK_PLATFORM`, `AUK_K6_TARGET`, `AUK_SKIP_NOTARIZE`. The
+Developer ID identity must already be in a keychain on the search list
+(`security find-identity -v -p codesigning`); the script does not create one.
+
+`wails` and `node` come from a version-managed toolchain — put them on `PATH`
+before running the script.
+
+### Architecture
+
+The app builds arm64-only by default (`AUK_PLATFORM=darwin/arm64`), so an
+arm64 k6 is bundled. `bundle-k6.sh` reads the architecture back off the built
+binary with `lipo -archs` and refuses to guess for a universal binary — if the
+app is ever built universal, the k6 story has to be revisited (upstream ships
+per-arch k6 builds, not a universal one, so it would mean `lipo`-ing two
+downloads together, which changes the "unmodified upstream binary" claim in
+`k6-NOTICE.txt`).
 
 ## Mac
 

@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { appState } from '../lib/store'
 import { wails } from '../lib/wails'
+import { copyText } from '../lib/clipboard'
 
 // The shapes below mirror the standard GraphQL introspection query result
 // (internal/protocols/graphql.introspectionQuery) — only the fields this
@@ -103,14 +104,18 @@ export default function GraphQLSchemaPanel(props: { requestId: string }) {
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [schema, setSchema] = createSignal<SchemaData | null>(null)
-  const [copied, setCopied] = createSignal<string | null>(null)
+  const [copied, setCopied] = createSignal<{ name: string; ok: boolean } | null>(null)
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
+  // Goes through lib/clipboard's copyText (Wails native first): the async
+  // Clipboard API is unavailable in the packaged app's WKWebView, where this
+  // used to flash "copied" while copying nothing at all.
   function copyField(name: string) {
-    void navigator.clipboard?.writeText(name)
-    setCopied(name)
-    if (copiedTimer) clearTimeout(copiedTimer)
-    copiedTimer = setTimeout(() => setCopied(null), 1200)
+    void copyText(name).then((result) => {
+      setCopied({ name, ok: result.ok })
+      if (copiedTimer) clearTimeout(copiedTimer)
+      copiedTimer = setTimeout(() => setCopied(null), result.ok ? 1200 : 3000)
+    })
   }
 
   async function fetchSchema() {
@@ -158,7 +163,13 @@ export default function GraphQLSchemaPanel(props: { requestId: string }) {
       <div class="flex shrink-0 items-center justify-between border-b border-edge px-2 py-1">
         <span class="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">Schema</span>
         <div class="flex items-center gap-2">
-          <Show when={copied()}>{(name) => <span class="text-[10px] text-accent-fg">Copied {name()}</span>}</Show>
+          <Show when={copied()}>
+            {(c) => (
+              <span class="text-[10px]" classList={{ 'text-accent-fg': c().ok, 'text-danger': !c().ok }}>
+                {c().ok ? `Copied ${c().name}` : 'Copy failed'}
+              </span>
+            )}
+          </Show>
           <Show when={open()}>
             <button class="text-[11px] text-ink-faint hover:text-ink-dim" onClick={() => setOpen(false)}>
               Hide

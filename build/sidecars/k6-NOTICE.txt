@@ -1,0 +1,59 @@
+THIRD-PARTY NOTICE — k6
+=======================
+
+This application (AUK) ships a copy of k6 so that load testing works out of
+the box. k6 is a separate program: AUK never links it, never embeds it into
+its own binary, and never compiles it in via xk6. AUK only ever launches it
+as an independent child process (`os/exec`) and talks to it over stdin/stdout
+and files. AUK's own source code is therefore not a derivative work of k6.
+
+  Program:      k6
+  Version:      v0.54.0
+  Copyright:    Copyright (C) 2024 Raintank, Inc. dba Grafana Labs
+  License:      GNU Affero General Public License, version 3 (AGPL-3.0)
+                The full license text is in k6-LICENSE.txt next to this file.
+  Homepage:     https://k6.io
+  Source:       https://github.com/grafana/k6
+  This release: https://github.com/grafana/k6/releases/tag/v0.54.0
+
+MODIFICATIONS
+-------------
+
+None. The bundled binary is the official, unmodified release artifact
+published by Grafana Labs at the URL above. It is byte-for-byte identical to
+the contents of the upstream release archive; AUK's build verifies it against
+a pinned SHA-256 before staging it into the app bundle:
+
+  k6-v0.54.0-macos-arm64.zip
+    archive  9fb42e1343d28fc26e6efa1269283edf39ddc20767249869c84aa333741fc3ae
+    k6       4e01b00234ede54382877df9dd9cfa2813af383235e6d253c776136a4687126e
+
+  k6-v0.54.0-macos-amd64.zip
+    archive  244ce603e3e1f0081b5b0b444de5631c22d0204ffbfa8b7f13ea6316da1f4376
+    k6       021a0b693b371ec6b23e315ff0e424cfa3429379708c570f12113717ca8acd14
+
+(The copy inside a distributed AUK.app carries an additional macOS code
+signature, applied by Apple's `codesign` so the sandboxed app is allowed to
+execute it. That is an Apple packaging requirement and does not alter the
+program.)
+
+CORRESPONDING SOURCE
+--------------------
+
+The complete corresponding source for the k6 version bundled here is the
+upstream release tagged v0.54.0:
+
+  https://github.com/grafana/k6/releases/tag/v0.54.0
+  https://github.com/grafana/k6/archive/refs/tags/v0.54.0.tar.gz
+
+The exact commit is recorded in the binary itself and can be printed with:
+
+  /Applications/AUK.app/Contents/Resources/bin/k6 version
+
+REPLACING THE BUNDLED COPY
+--------------------------
+
+k6 is a plain, swappable file. To run a different build, either replace
+Contents/Resources/bin/k6 in the app bundle, or set the environment variable
+APITOOL_K6_BIN to the absolute path of the k6 binary you want AUK to use — it
+takes precedence over the bundled copy.

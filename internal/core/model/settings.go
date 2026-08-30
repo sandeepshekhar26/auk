@@ -14,4 +14,7 @@ type AppSettings struct {
 	// not ephemeral, so a saved .mcp.json config stays valid across
 	// restarts). 0 means the default.
 	MCPPort int `yaml:"mcpPort,omitempty" json:"mcpPort"`
+	// SidebarMode is "docked" (persistent left tree, the default — empty
+	// string means docked) or "overlay" (the original slide-over drawer).
+	SidebarMode string `yaml:"sidebarMode,omitempty" json:"sidebarMode"`
 }

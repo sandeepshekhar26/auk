@@ -53,7 +53,13 @@ func applyAWSSigV4(cfg model.AWSSigV4Auth, req core.ResolvedRequest, now time.Ti
 	amzDate := now.UTC().Format("20060102T150405Z")
 	dateStamp := now.UTC().Format("20060102")
 
-	canonicalURI := awsCanonicalURI(u.Path)
+	// EscapedPath (not u.Path): a path segment may legitimately contain an
+	// encoded "/" (%2F) — e.g. a `:name` path-param value like "a/b", which
+	// AUK sends on the wire as %2F. u.Path decodes that back to a real "/",
+	// so signing u.Path would canonicalize a DIFFERENT path structure than
+	// the one actually sent, yielding SignatureDoesNotMatch. Canonicalizing
+	// the escaped form keeps the signed path byte-consistent with the wire.
+	canonicalURI := awsCanonicalURI(u.EscapedPath())
 	canonicalQueryString := awsCanonicalQueryString(u.Query())
 
 	var bodyBytes []byte
@@ -111,17 +117,29 @@ func applyAWSSigV4(cfg model.AWSSigV4Auth, req core.ResolvedRequest, now time.Ti
 	return req, nil
 }
 
-// awsCanonicalURI re-encodes an already-decoded URL path per AWS's URI-encode
-// rules (every byte except A-Z a-z 0-9 - . _ ~, applied per path segment so
-// "/" separators are preserved) rather than trusting the standard library's
-// own escaping, which AWS's docs explicitly warn can disagree in edge cases.
-func awsCanonicalURI(path string) string {
-	if path == "" {
+// awsCanonicalURI re-encodes a URL path per AWS's URI-encode rules (every
+// byte except A-Z a-z 0-9 - . _ ~, applied per path segment so "/"
+// separators are preserved) rather than trusting the standard library's own
+// escaping, which AWS's docs explicitly warn can disagree in edge cases.
+//
+// The input is the ESCAPED path (u.EscapedPath). Each segment is first
+// PathUnescape'd to its raw bytes and then awsURIEncode'd, so an already
+// percent-encoded "/" inside a segment (%2F) survives as an encoded slash in
+// the canonical URI instead of being split into a new path separator — which
+// is exactly what keeps the signature consistent with a wire path that
+// carries a `:name` value containing "/". A segment that fails to unescape
+// (malformed %xx) falls back to encoding it verbatim.
+func awsCanonicalURI(escapedPath string) string {
+	if escapedPath == "" {
 		return "/"
 	}
-	segments := strings.Split(path, "/")
+	segments := strings.Split(escapedPath, "/")
 	for i, seg := range segments {
-		segments[i] = awsURIEncode(seg)
+		raw, err := url.PathUnescape(seg)
+		if err != nil {
+			raw = seg
+		}
+		segments[i] = awsURIEncode(raw)
 	}
 	return strings.Join(segments, "/")
 }

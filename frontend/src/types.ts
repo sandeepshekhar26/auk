@@ -33,6 +33,9 @@ export interface RequestDef {
   url: string
   headers: KeyValue[]
   params: KeyValue[]
+  // Values for `:name` path placeholders in url (e.g. /users/:id) —
+  // see PathParams in internal/core/model/model.go.
+  pathParams?: KeyValue[] | null
   body: RequestBody | null
   authRef: AuthConfig | null
   perf?: PerfConfig | null

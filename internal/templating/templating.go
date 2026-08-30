@@ -182,6 +182,16 @@ func (e *Engine) Resolve(ctx context.Context, req model.RequestDef, env *model.E
 	for _, p := range req.Params {
 		resolved.Params = append(resolved.Params, model.KeyValue{Key: resolve(p.Key), Value: resolve(p.Value), Enabled: p.Enabled})
 	}
+	// Path param VALUES are templated like any other field (so /users/:id
+	// with id = ${userId} works), but their KEYS are not: a key is the
+	// literal placeholder name parsed out of the URL, and running it
+	// through the resolver would only ever mangle it. The `:name` -> value
+	// substitution into URL itself happens one layer up, in
+	// core.Engine.resolveAndAuthorize, which is where the request's
+	// protocol gates whether path placeholders apply at all.
+	for _, p := range req.PathParams {
+		resolved.PathParams = append(resolved.PathParams, model.KeyValue{Key: p.Key, Value: resolve(p.Value), Enabled: p.Enabled})
+	}
 	if req.Body != nil {
 		resolvedBody := *req.Body
 		resolvedBody.Text = resolve(req.Body.Text)

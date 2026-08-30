@@ -159,8 +159,18 @@ type RequestDef struct {
 	URL         string       `yaml:"url" json:"url"`
 	Headers     []KeyValue   `yaml:"headers,omitempty" json:"headers"`
 	Params      []KeyValue   `yaml:"params,omitempty" json:"params"`
-	Body        *RequestBody `yaml:"body,omitempty" json:"body"`
-	Auth        *AuthConfig  `yaml:"auth,omitempty" json:"authRef"`
+	// PathParams are values for `:name` path placeholders in URL (e.g.
+	// /users/:id). Rows are DERIVED from the URL by the editor rather than
+	// added by hand, so Key is always a placeholder name that appears (or
+	// recently appeared) in URL and Enabled is not meaningful. Substituted
+	// into the URL path by core.applyPathParams at resolve time — after
+	// `${...}` templating of both the URL and these values, before auth —
+	// and percent-encoded as single path segments. Only the http and
+	// graphql protocols get substitution; see applyPathParams for why a
+	// gRPC `host:port` target must be left alone.
+	PathParams []KeyValue   `yaml:"pathParams,omitempty" json:"pathParams,omitempty"`
+	Body       *RequestBody `yaml:"body,omitempty" json:"body"`
+	Auth       *AuthConfig  `yaml:"auth,omitempty" json:"authRef"`
 	// Perf is the optional load-test config attached to this request, versioned
 	// with it in the same YAML file (see internal/core/model/perf.go).
 	Perf *PerfConfig `yaml:"perf,omitempty" json:"perf,omitempty"`

@@ -164,7 +164,7 @@ func (a *App) seedDemoData() {
 	}
 
 	wsID := uuid.NewString()
-	if err := a.store.PutWorkspace(model.Workspace{ID: wsID, Name: "Demo Workspace", OrderKey: "a0"}); err != nil {
+	if err := a.store.PutWorkspace(model.Workspace{ID: wsID, Name: "Demo Workspace"}); err != nil {
 		return
 	}
 
@@ -177,7 +177,6 @@ func (a *App) seedDemoData() {
 	_ = a.store.PutRequest(model.RequestDef{
 		ID: uuid.NewString(), WorkspaceID: wsID, Name: "GET httpbin",
 		Protocol: model.ProtocolHTTP, Method: "GET", URL: "https://httpbin.org/get",
-		OrderKey: "a0",
 	})
 }
 
@@ -480,7 +479,7 @@ func (a *App) ImportCollection(content string) (string, error) {
 	}
 
 	wsID := uuid.NewString()
-	if err := a.store.PutWorkspace(model.Workspace{ID: wsID, Name: res.WorkspaceName, OrderKey: "a0"}); err != nil {
+	if err := a.store.PutWorkspace(model.Workspace{ID: wsID, Name: res.WorkspaceName}); err != nil {
 		return "", err
 	}
 

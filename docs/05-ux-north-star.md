@@ -44,6 +44,50 @@ Every PR touching the frontend is reviewed against these. A change that violates
 
 ---
 
+## The navigation model: docked by default, overlay for purists
+
+**This section supersedes the original "structural break from the permanent
+sidebar convention" decision.** v0.1 shipped navigation as a 48px icon rail
+plus an on-demand overlay drawer (⌘B) that auto-closed the moment you picked
+a request — betting that a maximally-clean editor beat a persistent tree.
+Live use falsified the bet: the left panel was hard to understand even with
+tooltips, and hiding the tree taxed exactly the users we're courting —
+Postman/Insomnia/Yaak refugees whose mental model *is* the always-visible
+collection tree. Novel-but-confusing loses to familiar-but-fast; density
+without clutter (law 3) was never supposed to mean *hiding the primary
+navigation surface*.
+
+The current model:
+
+- **Docked sidebar (default).** A persistent, resizable (220–400px,
+  width remembered) panel between the rail and the editor — the layout every
+  competitor user already knows. ⌘B collapses/expands it. Picking a request
+  does **not** close it.
+- **The rail switches sections.** The 48px icon rail (real SVG icons, not
+  unicode glyphs; active section marked with an accent bar) picks what the
+  sidebar shows — Requests, History, Git, MCP, Cookies — one section at a
+  time with a header naming it, instead of five crammed tabs inside the
+  panel.
+- **The tree earns its pixels.** Color-coded method badges (GET/POST/PUT/
+  PATCH/DELETE each a fixed hue; WS/GQL/SSE/gRPC as protocol chips), no URLs
+  in rows, hover actions behind one ⋯ menu, right-click context menus,
+  full keyboard navigation (↑↓→← / Enter / F2 rename / ⌘⌫ delete), and
+  drag-to-reorder backed by fractional order keys.
+- **Overlay mode survives as an opt-out** (`sidebarMode: overlay` in
+  settings, toggled by the pin button in the sidebar header) for the
+  original maximum-editor-width behavior: opens on demand, auto-closes on
+  pick, Escape dismisses. The one-in-ten user who loved the drawer keeps
+  it; the other nine get the convention they came for.
+- **The command palette is unchanged in status.** ⌘K still reaches
+  everything (law 2) — the docked tree is the *browse* surface, the palette
+  is the *jump* surface. They are complements, not competitors.
+
+The lesson, recorded so we don't relearn it: differentiate on **speed and
+polish inside familiar structure**, not on relocating structure users
+navigate by muscle memory.
+
+---
+
 ## Why the architecture already backs this
 
 The UX bet is only credible because the stack was chosen to serve it — this isn't aspiration bolted onto an indifferent foundation:
@@ -51,7 +95,7 @@ The UX bet is only credible because the stack was chosen to serve it — this is
 | UX law | What makes it achievable |
 |---|---|
 | Instant, always | Wails (Go + native OS webview, no bundled Chromium; budget ~80–250MB with the known WKWebView idle-leak reports, still far below Electron); **SolidJS** fine-grained reactivity (no VDOM diff on streaming updates); Go-side stream coalescing + TanStack Virtual. |
-| Keyboard-first | Command-palette-first information architecture; every command routed through the same headless engine, so the palette and the buttons call identical code. |
+| Keyboard-first | A command palette that reaches every action (alongside the docked sidebar — jump surface and browse surface, see "The navigation model" above); every command routed through the same headless engine, so the palette and the buttons call identical code. |
 | Density without clutter | Progressive disclosure baked into the component model; CodeMirror (tree-shaken, ~50–150KB) instead of Monaco (2–5MB). |
 | Best-in-class editing | CodeMirror 6 language packages; virtualized response trees; response-diff as a v1.0 feature. |
 | Zero-config | One-shot importers (OpenAPI/Postman/Insomnia/cURL); files-as-truth means no setup, no login, no server. |

@@ -20,10 +20,16 @@ const EnvK6Bin = "APITOOL_K6_BIN"
 
 // ResolveK6 locates the bundled k6 binary. Order:
 //  1. $APITOOL_K6_BIN (explicit override, used in dev and tests)
-//  2. the app bundle's Resources dir (macOS: <App>.app/Contents/Resources/k6)
-//     or next to the executable (Windows/Linux)
+//  2. the app bundle's Resources dir (macOS: <App>.app/Contents/Resources/bin/k6,
+//     where release packaging stages it) or next to the executable
 //  3. a repo-relative build/sidecars/k6 (running `wails dev` / `go run`)
-//  4. k6 on $PATH (last resort; may be a user-installed k6)
+//  4. ~/Library/Application Support/AUK/bin/k6 — where the in-app "Download
+//     k6" self-heal puts it when a build shipped without the bundled copy.
+//     Ranked below the repo sidecar so a developer's working copy always
+//     wins over a stale download, and above PATH so AUK prefers the exact
+//     pinned version it knows how to parse over whatever k6 a user happens
+//     to have installed.
+//  5. k6 on $PATH (last resort; may be a user-installed k6)
 //
 // It returns a clear, actionable error if none is found, since "run a load
 // test" is dead without it.
@@ -59,11 +65,15 @@ func ResolveK6() (string, error) {
 		return repo, nil
 	}
 
+	if managed, err := ManagedK6Path(); err == nil && isExecutable(managed) {
+		return managed, nil
+	}
+
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
 
-	return "", fmt.Errorf("k6 binary not found: set %s, bundle it in Resources/, place it in build/sidecars/, or install k6 on PATH", EnvK6Bin)
+	return "", fmt.Errorf("k6 binary not found: set %s, bundle it in Resources/bin/, place it in build/sidecars/, download it from the load-test panel, or install k6 on PATH", EnvK6Bin)
 }
 
 // repoSidecar walks up from the cwd looking for build/sidecars/<name>, so

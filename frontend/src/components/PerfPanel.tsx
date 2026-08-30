@@ -22,6 +22,8 @@ export default function PerfPanel(props: { requestIndex: number }) {
   const [running, setRunning] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [k6Missing, setK6Missing] = createSignal<string | null>(null)
+  const [k6Downloading, setK6Downloading] = createSignal(false)
+  const [k6DownloadError, setK6DownloadError] = createSignal<string | null>(null)
 
   const req = createMemo(() => appState.requests[props.requestIndex])
   const cfg = createMemo<PerfConfig>(() => req()?.perf ?? DEFAULT_CONFIG)
@@ -82,6 +84,31 @@ export default function PerfPanel(props: { requestIndex: number }) {
     } finally {
       off()
       setRunning(false)
+    }
+  }
+
+  // Self-heal for a build that shipped without the bundled k6: fetch the
+  // pinned official release into Application Support, then clear the missing
+  // state so the panel returns to its normal ready state. We deliberately do
+  // NOT auto-run the load test afterward — the download takes several seconds,
+  // during which the user may have switched to a different request/tab (run()
+  // reads the CURRENT req(), so an auto-run could hit the wrong target), and
+  // silently launching a real load test is surprising. The user presses Run.
+  async function downloadK6() {
+    setK6DownloadError(null)
+    setK6Downloading(true)
+    try {
+      await wails.DownloadK6()
+      const stillMissing = await wails.CheckK6()
+      if (stillMissing) {
+        setK6DownloadError(stillMissing)
+        return
+      }
+      setK6Missing(null)
+    } catch (err) {
+      setK6DownloadError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setK6Downloading(false)
     }
   }
 
@@ -195,10 +222,37 @@ export default function PerfPanel(props: { requestIndex: number }) {
       </div>
 
       <Show when={k6Missing()}>
-        <div class="rounded border border-warn-edge bg-warn/10 px-3 py-2 text-xs text-warn">
-          <p class="font-medium">k6 is not available.</p>
-          <p class="mt-0.5 text-ink-dim">{k6Missing()}</p>
-          <p class="mt-1 text-ink-faint">Run build/sidecars/download-k6.sh, or install k6 on your PATH.</p>
+        <div class="rounded border border-warn-edge bg-warn/10 px-3 py-2 text-xs">
+          <p class="font-medium text-warn">This build is missing the bundled k6.</p>
+          <p class="mt-0.5 text-ink-dim">
+            AUK uses k6 to run load tests. It normally ships inside the app — this copy doesn't have it. Download it once and
+            AUK will use it from now on.
+          </p>
+
+          <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <button
+              class="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-default disabled:opacity-60"
+              disabled={k6Downloading()}
+              onClick={downloadK6}
+            >
+              <Show when={k6Downloading()}>
+                <span class="h-3 w-3 animate-spin rounded-full border-2 border-accent-contrast/30 border-t-accent-contrast" />
+              </Show>
+              {k6Downloading() ? 'Downloading k6…' : 'Download k6 (~30 MB)'}
+            </button>
+            <span class="text-ink-faint">
+              {k6Downloading() ? 'Fetching the official release and verifying it.' : 'Or install k6 yourself and it will be picked up from your PATH.'}
+            </span>
+          </div>
+
+          <Show when={k6DownloadError()}>
+            <p class="mt-2 rounded border border-danger-edge bg-danger-bg/40 px-2 py-1 text-danger">{k6DownloadError()}</p>
+          </Show>
+
+          <details class="mt-2">
+            <summary class="cursor-pointer select-none text-ink-faint">Details</summary>
+            <p class="mt-1 font-mono text-[11px] leading-relaxed text-ink-faint">{k6Missing()}</p>
+          </details>
         </div>
       </Show>
 

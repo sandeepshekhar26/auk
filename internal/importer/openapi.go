@@ -121,7 +121,17 @@ func ParseOpenAPI(data []byte) (ImportResult, error) {
 	sort.Strings(paths)
 
 	order := 0
-	nextOrder := func() string { order++; return fmt.Sprintf("%06d", order) }
+	// Never ends in '0' (append "1" when it would): a key ending in the
+	// alphabet's lowest digit can never have a sibling inserted directly
+	// before it (see internal/storage/orderkey.go).
+	nextOrder := func() string {
+		order++
+		k := fmt.Sprintf("%06d", order)
+		if strings.HasSuffix(k, "0") {
+			k += "1"
+		}
+		return k
+	}
 
 	for _, path := range paths {
 		ops := doc.Paths[path]

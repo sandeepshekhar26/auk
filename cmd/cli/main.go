@@ -197,7 +197,7 @@ func newStore(dir string) (core.Store, error) {
 // the generated uuid.
 func seedDemoData(store *storage.FileStore, url string) (requestID model.ID, err error) {
 	wsID := uuid.NewString()
-	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "Demo Workspace", OrderKey: "a0"}); err != nil {
+	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "Demo Workspace"}); err != nil {
 		return "", err
 	}
 
@@ -213,7 +213,6 @@ func seedDemoData(store *storage.FileStore, url string) (requestID model.ID, err
 	if err := store.PutRequest(model.RequestDef{
 		ID: requestID, WorkspaceID: wsID, Name: "GET httpbin",
 		Protocol: model.ProtocolHTTP, Method: "GET", URL: url,
-		OrderKey: "a0",
 	}); err != nil {
 		return "", err
 	}

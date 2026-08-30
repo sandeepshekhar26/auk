@@ -226,3 +226,24 @@ func assertAuthzHeader(t *testing.T, req core.ResolvedRequest, want string) {
 		t.Fatalf("Authorization header mismatch:\n got:  %s\n want: %s", got, want)
 	}
 }
+
+// awsCanonicalURI must canonicalize from the ESCAPED path so an encoded "/"
+// (%2F) inside a single path segment — as produced by a `:name` path-param
+// value containing a slash — stays an encoded slash in the signed canonical
+// URI instead of being decoded into a new separator. If it were split, the
+// signed path structure would diverge from the wire path structure and AWS
+// would reject with SignatureDoesNotMatch. Regression test for that fix.
+func TestAWSCanonicalURI_EncodedSlashSurvives(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"/files/folder%2Fsub", "/files/folder%2Fsub"}, // %2F is NOT a separator
+		{"/files/a%20b", "/files/a%20b"},               // ordinary encoded space round-trips
+		{"/users/42/posts", "/users/42/posts"},         // plain path unchanged
+		{"", "/"},                                      // empty path canonicalizes to root
+		{"/a b", "/a%20b"},                             // a raw (unescaped) space still gets encoded
+	}
+	for _, c := range cases {
+		if got := awsCanonicalURI(c.in); got != c.want {
+			t.Errorf("awsCanonicalURI(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

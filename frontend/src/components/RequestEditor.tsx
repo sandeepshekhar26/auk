@@ -5,6 +5,7 @@ import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
 import { wails } from '../lib/wails'
 import type { KeyValue, ProtocolKind } from '../types'
 import KeyValueTable from './KeyValueTable'
+import CopyAsMenu from './CopyAsMenu'
 import BodyEditor from './BodyEditor'
 import GraphQLEditor from './GraphQLEditor'
 import GrpcEditor, { METHOD_HEADER } from './GrpcEditor'
@@ -78,6 +79,35 @@ function buildQueryString(params: KeyValue[] | undefined): string {
     .filter((p) => p.enabled && p.key)
     .map((p) => `${p.key}=${p.value}`)
     .join('&')
+}
+
+// A Postman-style path placeholder: a WHOLE path segment of `:name`.
+// Character-for-character the same rule as core.pathParamName in
+// internal/core/pathparams.go, because the rows shown here must be exactly
+// the ones the backend substitutes — a mismatch would mean either an
+// un-fillable placeholder or a filled-in row that silently does nothing.
+const PATH_PARAM_SEGMENT = /^:[A-Za-z_][A-Za-z0-9_]*$/
+
+// Extracts the placeholder names from a URL's PATH, in order, de-duplicated.
+//
+// Same deliberate hand-rolled parse as splitQuery above (URL/URLSearchParams
+// reject `${baseUrl}/users/:id`, which is the normal shape here). Only
+// segments after the first '/' are considered, so a `host:443` authority is
+// never mistaken for a placeholder — and since a name can't start with a
+// digit, `:443` wouldn't match even if it were. The query string is dropped
+// first, so `?next=/x/:id` contributes nothing.
+function parsePathParamNames(url: string): string[] {
+  const { base } = splitQuery(url)
+  const slash = base.indexOf('/')
+  if (slash === -1) return []
+  const names: string[] = []
+  for (const seg of base.slice(slash).split('/')) {
+    if (PATH_PARAM_SEGMENT.test(seg)) {
+      const name = seg.slice(1)
+      if (!names.includes(name)) names.push(name)
+    }
+  }
+  return names
 }
 
 type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'script' | 'assert' | 'perf'
@@ -192,11 +222,70 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
     if (nextUrl !== r.url) setAppState('requests', idx, 'url', nextUrl)
   }
 
+  // Reconciles the pathParams rows with the `:name` placeholders currently
+  // in the URL. Rows are DERIVED from the URL — typing a new placeholder
+  // adds one, deleting it from the URL removes it — but a row's VALUE is
+  // the user's, so it's carried across by key on every re-parse. Without
+  // that, typing one more character of the URL would blank the value you
+  // just entered.
+  //
+  // Writes only when the ordered list of names actually changed. That's not
+  // just an optimization: rewriting the array on every keystroke would
+  // recreate the <For> rows, which destroys the focused <input> and drops
+  // the caret — the exact focus-loss class of bug this file's other sync
+  // helpers are all shaped to avoid.
+  function syncPathParamsFromUrl(idx: number) {
+    const r = appState.requests[idx]
+    if (!r) return
+    const names = parsePathParamNames(r.url)
+    const current = r.pathParams ?? []
+    if (names.length === current.length && names.every((n, i) => current[i].key === n)) return
+    const byKey = new Map(current.map((p) => [p.key, p.value]))
+    setAppState(
+      'requests',
+      idx,
+      'pathParams',
+      names.map((name) => ({ key: name, value: byKey.get(name) ?? '', enabled: true })),
+    )
+  }
+
+  // Keeps the Path rows correct for URLs this editor didn't type: opening a
+  // request whose stored URL already has `:name` (imported from Postman,
+  // pulled in over git, hand-edited YAML), or switching tabs. Reading
+  // `.url` off the active request is what subscribes this to it — see the
+  // save-effect comment above for why `active()` alone wouldn't.
+  //
+  // `on()` rather than a bare effect specifically so the dependency is the
+  // index+URL and nothing else: syncPathParamsFromUrl READS pathParams to
+  // decide whether to write them, and inside a tracking scope that read
+  // would subscribe the effect to its own output. on()'s callback runs
+  // untracked, so it can't.
+  createEffect(
+    on(
+      () => {
+        const req = active()
+        return req ? `${activeIndex()} ${req.url}` : null
+      },
+      (key) => {
+        if (key !== null) syncPathParamsFromUrl(activeIndex())
+      },
+    ),
+  )
+
   function setRow(field: 'headers' | 'params', index: number, key: keyof KeyValue, value: string | boolean) {
     const idx = activeIndex()
     if (idx < 0) return
     setAppState('requests', idx, field, index, key as any, value as any)
     if (field === 'params') syncUrlFromParams(idx)
+  }
+
+  // Fine-grained path write, exactly like setRow: it targets one row's one
+  // field so Solid updates that <input>'s value in place instead of
+  // rebuilding the row and stealing focus mid-keystroke.
+  function setPathParamValue(index: number, value: string) {
+    const idx = activeIndex()
+    if (idx < 0) return
+    setAppState('requests', idx, 'pathParams', index, 'value', value)
   }
 
   // Go's omitempty serializes an empty/nil headers-or-params slice as JSON
@@ -238,6 +327,10 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
     const idx = activeIndex()
     if (idx < 0) return
     setAppState('requests', idx, 'url', value)
+    // `:name` placeholders in the path get the same treatment as the query
+    // string does below — the URL bar stays the single place you author
+    // both, and the Params tab reflects it.
+    syncPathParamsFromUrl(idx)
     const { query } = splitQuery(value)
     const current = appState.requests[idx]?.params ?? []
     if (query === buildQueryString(current)) return
@@ -319,6 +412,12 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
                 </button>
               </Show>
             </Show>
+            {/* Copy as code, right of Send — because the reason you want a
+                cURL command is usually to hand the request to someone else
+                or paste it in a terminal, which has nothing to do with
+                whether you've run it yet. The response-side menu (same
+                component, same backend resolution) stays for after a send. */}
+            <CopyAsMenu requestId={req().id} protocol={req().protocol || 'http'} variant="icon" />
           </div>
 
           {/* WebSocket message composer — only while connected. SSE is
@@ -384,6 +483,26 @@ export default function RequestEditor(props: { onSend: (requestId: string) => vo
           <div class="flex flex-1 flex-col overflow-hidden">
             <Show when={tab() === 'params'}>
               <div class="overflow-y-auto">
+                {/* Path params sit ABOVE the query params because that's
+                    their order in the URL, and they only appear at all when
+                    the URL actually has a `:name` in it — an empty group
+                    would just be a permanent question about a feature most
+                    requests don't use. */}
+                <Show when={(req().pathParams?.length ?? 0) > 0}>
+                  <div class="border-b border-edge">
+                    <p class="px-3 pt-2 text-[10px] text-ink-faint">
+                      From <code class="text-ink-muted">:name</code> placeholders in the URL path. Edit the URL to add
+                      or remove one.
+                    </p>
+                    <KeyValueTable
+                      rows={req().pathParams ?? []}
+                      keyLabel="Path"
+                      readOnlyKeys
+                      valuePlaceholder="value"
+                      onSet={(i, _field, v) => setPathParamValue(i, String(v))}
+                    />
+                  </div>
+                </Show>
                 <KeyValueTable
                   rows={req().params}
                   keyPlaceholder="param"

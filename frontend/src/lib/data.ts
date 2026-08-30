@@ -38,6 +38,11 @@ function normalizeRequest(r: wailsModel.RequestDef): RequestDef {
     folderId: r.folderId ?? null,
     headers: r.headers ?? [],
     params: r.params ?? [],
+    // Same omitempty null-vs-undefined trap as headers/params above: the
+    // URL parser rebuilds this list with `[...(rows ?? []), ...]`-style
+    // updates, and a `null` arriving from a request that has never had a
+    // `:name` placeholder would break the first one to run.
+    pathParams: r.pathParams ?? [],
     body: body ? { ...body, formFields: body.formFields ?? [] } : null,
     authRef: (r.authRef ?? null) as RequestDef['authRef'],
     perf: (r.perf ?? null) as RequestDef['perf'],
@@ -248,4 +253,180 @@ export async function flushRequestSave(requestId: string): Promise<void> {
   }
   const req = appState.requests.find((r) => r.id === requestId)
   if (req) await wails.UpdateRequest(models.RequestDef.createFrom(req))
+}
+
+// Cancels a pending debounced save for id. saveRequestDebounced captures a
+// deep-copied SNAPSHOT (RequestEditor passes JSON.parse(snapshot)); left to
+// fire after an immediate move/rename write it would push that stale snapshot
+// (old orderKey/folderId/name) back to disk, silently reverting the gesture.
+function cancelPendingRequestSave(id: string): void {
+  const existing = saveTimers.get(id)
+  if (existing) {
+    clearTimeout(existing)
+    saveTimers.delete(id)
+  }
+}
+
+// Folder equivalent. saveFolderDebounced captures a live store reference (not a
+// snapshot), so it wouldn't revert a rename/move today — but cancelling keeps
+// the immediate write the single persistence and stops a redundant late write
+// from racing it (and future-proofs if folders ever move to snapshots).
+function cancelPendingFolderSave(id: string): void {
+  const existing = folderSaveTimers.get(id)
+  if (existing) {
+    clearTimeout(existing)
+    folderSaveTimers.delete(id)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fractional order keys (client-side twin of internal/storage/orderkey.go).
+// The backend mints an at-the-end key whenever it sees an EMPTY orderKey,
+// but drag-reorder and duplicate-after-source need "insert between two
+// specific siblings" keys minted client-side and passed through explicitly
+// (PutRequest/PutFolder trust a non-empty key as-is). Same alphabet, same
+// algorithm, so keys from either side interleave correctly.
+// ---------------------------------------------------------------------------
+
+const ORDER_KEY_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+const ORDER_KEY_BASE = ORDER_KEY_ALPHABET.length
+
+/**
+ * Returns a key sorting strictly between a and b (plain string comparison,
+ * matching the tree's orderKey.localeCompare sort). "" for a = insert at the
+ * very start; "" for b = insert at the very end.
+ */
+export function orderKeyBetween(a: string, b: string): string {
+  a = a.replace(/0+$/, '')
+  if (a !== '' && b !== '' && a >= b) {
+    // Defensive: callers should never pass an inverted/equal range.
+    return orderKeyMidpoint(a, '')
+  }
+  return orderKeyMidpoint(a, b)
+}
+
+function orderKeyMidpoint(a: string, b: string): string {
+  if (b !== '') {
+    let n = 0
+    while (n < a.length && n < b.length && a[n] === b[n]) n++
+    if (n > 0) return b.slice(0, n) + orderKeyMidpoint(a.slice(n), b.slice(n))
+  }
+  const digitA = a !== '' ? ORDER_KEY_ALPHABET.indexOf(a[0]) : 0
+  const digitB = b !== '' ? ORDER_KEY_ALPHABET.indexOf(b[0]) : ORDER_KEY_BASE
+  if (digitB - digitA > 1) {
+    return ORDER_KEY_ALPHABET[digitA + Math.floor((digitB - digitA + 1) / 2)]
+  }
+  if (digitA === digitB) {
+    // Only reachable when a is exhausted and b starts with '0' — emit '0'
+    // and keep narrowing against b's remainder (see orderkey.go).
+    return ORDER_KEY_ALPHABET[0] + orderKeyMidpoint('', b === '' ? '' : b.slice(1))
+  }
+  // digitB == digitA+1 from here on.
+  if (b !== '' && b.length > 1 && digitB !== 0) {
+    return b[0]
+  }
+  return ORDER_KEY_ALPHABET[digitA] + orderKeyMidpoint(a === '' ? '' : a.slice(1), '')
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar tree operations: move (drag & drop), duplicate, rename. All write
+// through Solid's fine-grained store PATH setter (never array
+// reconstruction — see Sidebar.tsx's reactivity notes) and persist
+// IMMEDIATELY (not debounced): each is a discrete gesture, not a keystroke
+// stream, so there's nothing to coalesce and no window for a stale save.
+// ---------------------------------------------------------------------------
+
+/** Moves a request to (folderId, orderKey) and persists it — the drag & drop commit. */
+export async function moveRequest(id: string, folderId: string | null, orderKey: string): Promise<void> {
+  cancelPendingRequestSave(id) // else a mid-edit debounced snapshot reverts this move
+  setAppState('requests', (r) => r.id === id, 'folderId', folderId)
+  setAppState('requests', (r) => r.id === id, 'orderKey', orderKey)
+  const req = appState.requests.find((r) => r.id === id)
+  if (req) await wails.UpdateRequest(models.RequestDef.createFrom(req))
+}
+
+/** Moves a folder to (parentId, orderKey) and persists it — sibling reorder via drag & drop. */
+export async function moveFolder(id: string, parentId: string | null, orderKey: string): Promise<void> {
+  cancelPendingFolderSave(id) // keep this immediate write the single persistence (see helper)
+  setAppState('folders', (f) => f.id === id, 'parentId', parentId)
+  setAppState('folders', (f) => f.id === id, 'orderKey', orderKey)
+  const folder = appState.folders.find((f) => f.id === id)
+  if (folder) await wails.UpdateFolder(models.Folder.createFrom(folder))
+}
+
+/** Renames a request and persists immediately (rename commits on Enter/blur, not per keystroke). */
+export async function renameRequest(id: string, name: string): Promise<void> {
+  cancelPendingRequestSave(id) // else a mid-edit debounced snapshot reverts this rename
+  setAppState('requests', (r) => r.id === id, 'name', name)
+  const req = appState.requests.find((r) => r.id === id)
+  if (req) await wails.UpdateRequest(models.RequestDef.createFrom(req))
+}
+
+/** Renames a folder and persists immediately. */
+export async function renameFolder(id: string, name: string): Promise<void> {
+  cancelPendingFolderSave(id) // keep this immediate write the single persistence (see helper)
+  setAppState('folders', (f) => f.id === id, 'name', name)
+  const folder = appState.folders.find((f) => f.id === id)
+  if (folder) await wails.UpdateFolder(models.Folder.createFrom(folder))
+}
+
+/**
+ * Duplicates a request: copies every field, mints a fresh id, names it
+ * "<name> copy", and lands it directly after the source among its siblings
+ * (explicit between-key — the backend would otherwise append it at the
+ * end). Opens the copy as a tab so a duplicate-then-tweak flow starts
+ * immediately.
+ */
+export async function duplicateRequest(sourceId: string): Promise<string | null> {
+  if (!appState.activeWorkspaceId) return null
+  const source = appState.requests.find((r) => r.id === sourceId)
+  if (!source) return null
+
+  const siblings = appState.requests
+    .filter((r) => r.folderId === source.folderId)
+    .sort((a, b) => a.orderKey.localeCompare(b.orderKey))
+  const sourceIndex = siblings.findIndex((r) => r.id === source.id)
+  const next = sourceIndex >= 0 ? siblings[sourceIndex + 1] : undefined
+
+  // JSON round-trip unwraps the Solid store proxy into a plain deep copy so
+  // the draft shares no nested arrays/objects with the live source row.
+  const draft: RequestDef = {
+    ...(JSON.parse(JSON.stringify(source)) as RequestDef),
+    id: crypto.randomUUID(),
+    name: `${source.name} copy`,
+    orderKey: orderKeyBetween(source.orderKey, next?.orderKey ?? ''),
+  }
+
+  await wails.CreateRequest(models.RequestDef.createFrom(draft))
+  await loadWorkspaceData(appState.activeWorkspaceId)
+  openTab(draft.id)
+  return draft.id
+}
+
+/**
+ * Creates a new blank request directly inside folderId (null = workspace
+ * root) — the folder context menu's "New request here". Same
+ * assign-id-client-side, persist, reload, open flow as createRequest.
+ */
+export async function createRequestIn(folderId: string | null): Promise<void> {
+  if (!appState.activeWorkspaceId) return
+
+  const draft: RequestDef = {
+    id: crypto.randomUUID(),
+    workspaceId: appState.activeWorkspaceId,
+    folderId,
+    name: 'New Request',
+    protocol: 'http',
+    method: 'GET',
+    url: '',
+    headers: [],
+    params: [],
+    body: null,
+    authRef: null,
+    orderKey: '',
+  }
+
+  await wails.CreateRequest(models.RequestDef.createFrom(draft))
+  await loadWorkspaceData(appState.activeWorkspaceId)
+  openTab(draft.id)
 }

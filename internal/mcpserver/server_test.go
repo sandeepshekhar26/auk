@@ -45,13 +45,13 @@ func seedWorkspace(t *testing.T, dir, url string) (wsID, reqID string) {
 		t.Fatalf("NewFileStore: %v", err)
 	}
 	wsID = "ws-1"
-	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "Test WS", OrderKey: "a0"}); err != nil {
+	if err := store.PutWorkspace(model.Workspace{ID: wsID, Name: "Test WS"}); err != nil {
 		t.Fatalf("PutWorkspace: %v", err)
 	}
 	reqID = "req-1"
 	if err := store.PutRequest(model.RequestDef{
 		ID: reqID, WorkspaceID: wsID, Name: "Ping", Protocol: model.ProtocolHTTP,
-		Method: "GET", URL: url, OrderKey: "a0",
+		Method: "GET", URL: url,
 	}); err != nil {
 		t.Fatalf("PutRequest: %v", err)
 	}

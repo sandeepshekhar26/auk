@@ -11,8 +11,9 @@ import {
   streamConsoleOpen,
   setStreamConsoleOpen,
   openExplorer,
+  setExplorerOpen,
 } from '../lib/store'
-import { createRequest } from '../lib/data'
+import { createFolder, createRequest, duplicateRequest } from '../lib/data'
 import { setTheme } from '../lib/theme'
 import { wails } from '../lib/wails'
 import type { CommandItem } from '../types'
@@ -34,10 +35,11 @@ const GROUP_LABEL: Record<CommandItem['group'], string> = {
   navigation: 'Navigate',
 }
 
-// The command palette is the app's home base, not a bolted-on jump-to —
-// everything reachable elsewhere (new request, import, settings, explorer,
-// theme) is reachable here too, so ⌘K is a complete substitute for clicking
-// around a sidebar (docs/05-ux-north-star.md).
+// The command palette is the app's JUMP surface: everything reachable
+// elsewhere (new request, import, settings, sidebar sections, theme) is
+// reachable here too, so a keyboard-first user never needs the mouse. It
+// complements the docked sidebar (the BROWSE surface) rather than replacing
+// it — see docs/05-ux-north-star.md "The navigation model".
 export default function CommandPalette() {
   const [query, setQuery] = createSignal('')
   let inputRef: HTMLInputElement | undefined
@@ -45,10 +47,26 @@ export default function CommandPalette() {
   const items = createMemo<CommandItem[]>(() => {
     const actionItems: CommandItem[] = [
       { id: 'action:new-request', title: 'New Request', subtitle: '⌘N', group: 'action', run: () => void createRequest() },
+      { id: 'action:new-folder', title: 'New Folder', group: 'action', run: () => void createFolder(null) },
+      {
+        id: 'action:duplicate-request',
+        title: 'Duplicate Request',
+        subtitle: 'active tab',
+        group: 'action',
+        run: () => {
+          if (appState.activeTabId) void duplicateRequest(appState.activeTabId)
+        },
+      },
+      {
+        id: 'action:toggle-sidebar',
+        title: 'Toggle Sidebar',
+        subtitle: '⌘B',
+        group: 'action',
+        run: () => setExplorerOpen((v) => !v),
+      },
       {
         id: 'action:browse-requests',
         title: 'Browse Requests',
-        subtitle: '⌘B',
         group: 'action',
         run: () => openExplorer('requests'),
       },

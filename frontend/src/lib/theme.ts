@@ -5,6 +5,7 @@
 import { createSignal } from 'solid-js'
 import { wails } from './wails'
 import { models } from './wails'
+import { mutateSettings } from './store'
 
 export type ThemePref = 'system' | 'dark' | 'light'
 
@@ -42,5 +43,11 @@ export async function initTheme(): Promise<void> {
 export function setTheme(pref: ThemePref): void {
   setThemePrefSignal(pref)
   apply(pref)
-  void wails.UpdateSettings(models.AppSettings.createFrom({ theme: pref })).catch(() => {})
+  // Read-modify-write the WHOLE settings object: UpdateSettings overwrites
+  // the file, so persisting {theme} alone would clobber sidebarMode/MCP
+  // preferences (it did — caught live when a theme switch wiped the
+  // sidebar-mode toggle). Routed through store.ts's mutateSettings so this
+  // read-modify-write is serialized with setSidebarMode's — two quick toggles
+  // can no longer interleave and clobber each other's field.
+  void mutateSettings((s) => models.AppSettings.createFrom({ ...s, theme: pref }))
 }

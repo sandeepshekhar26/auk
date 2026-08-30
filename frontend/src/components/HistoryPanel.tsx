@@ -1,5 +1,6 @@
 import { For, Show } from 'solid-js'
-import { appState, openTab, setExplorerOpen } from '../lib/store'
+import { appState, openTab, setExplorerOpen, sidebarMode } from '../lib/store'
+import { MethodBadge } from './icons'
 
 function relativeTime(timestamp: string): string {
   const then = new Date(timestamp).getTime()
@@ -28,10 +29,14 @@ export default function HistoryPanel() {
             class="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-raised"
             onClick={() => {
               openTab(h.requestId)
-              setExplorerOpen(false)
+              // Overlay mode auto-closes on pick, same as the requests tree;
+              // the docked sidebar stays put.
+              if (sidebarMode() === 'overlay') setExplorerOpen(false)
             }}
           >
-            <span class="font-mono font-semibold text-ink-muted">{h.method}</span>
+            <span class="flex w-10 shrink-0 justify-end">
+              <MethodBadge method={h.method} />
+            </span>
             <span class="flex-1 truncate text-ink-dim">{h.requestName}</span>
             <span classList={{ 'text-accent-fg': h.status < 400, 'text-danger': h.status >= 400 }}>{h.status}</span>
             <span class="text-ink-faint">{h.timingMs}ms</span>

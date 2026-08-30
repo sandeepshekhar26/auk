@@ -3,6 +3,7 @@ import { settingsOpen, setSettingsOpen } from '../lib/store'
 import { setTheme, themePref } from '../lib/theme'
 import type { ThemePref } from '../lib/theme'
 import { wails } from '../lib/wails'
+import { copyText } from '../lib/clipboard'
 
 interface MCPStatus {
   running: boolean
@@ -21,6 +22,7 @@ const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
 export default function SettingsModal() {
   const [mcp, setMcp] = createSignal<MCPStatus | null>(null)
   const [copied, setCopied] = createSignal(false)
+  const [copyFailed, setCopyFailed] = createSignal(false)
   const [toggling, setToggling] = createSignal(false)
 
   // Refresh MCP status whenever the panel opens.
@@ -41,16 +43,20 @@ export default function SettingsModal() {
     }
   }
 
+  // lib/clipboard's copyText, not navigator.clipboard: the async Clipboard
+  // API rejects inside the packaged app's WKWebView, and the old catch here
+  // swallowed that so the button just never changed. copyFailed drives a
+  // visible failure state instead.
   async function copyConnect() {
     const cmd = mcp()?.connectCommand
     if (!cmd) return
-    try {
-      await navigator.clipboard.writeText(cmd)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* clipboard unavailable */
-    }
+    const result = await copyText(cmd)
+    setCopied(result.ok)
+    setCopyFailed(!result.ok)
+    setTimeout(() => {
+      setCopied(false)
+      setCopyFailed(false)
+    }, result.ok ? 1500 : 4000)
   }
 
   function close() {
@@ -149,10 +155,11 @@ export default function SettingsModal() {
                     <span class="font-mono text-ink-dim">{mcp()!.url}</span>
                   </div>
                   <button
-                    class="self-start rounded bg-field px-2 py-1 text-[11px] text-ink-dim hover:bg-raised"
+                    class="self-start rounded bg-field px-2 py-1 text-[11px] hover:bg-raised"
+                    classList={{ 'text-danger': copyFailed(), 'text-ink-dim': !copyFailed() }}
                     onClick={copyConnect}
                   >
-                    {copied() ? 'Copied' : 'Copy "claude mcp add" command'}
+                    {copyFailed() ? 'Copy failed' : copied() ? 'Copied' : 'Copy "claude mcp add" command'}
                   </button>
                 </div>
               </Show>

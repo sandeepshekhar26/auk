@@ -34,6 +34,16 @@ export default {
         'warn-edge': token('warn-edge'),
         info: token('info'),
         keyword: token('keyword'),
+        'method-get': token('method-get'),
+        'method-post': token('method-post'),
+        'method-put': token('method-put'),
+        'method-patch': token('method-patch'),
+        'method-delete': token('method-delete'),
+        'method-misc': token('method-misc'),
+        'proto-ws': token('proto-ws'),
+        'proto-gql': token('proto-gql'),
+        'proto-sse': token('proto-sse'),
+        'proto-grpc': token('proto-grpc'),
       },
       fontFamily: {
         // Inter/JetBrains Mono chosen deliberately — not the OS default —
