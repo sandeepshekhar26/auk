@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on, onCleanup } from 'solid-js'
+import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from 'solid-js'
 import { appState } from '../lib/store'
 import { copyText } from '../lib/clipboard'
 import { SNIPPET_FORMATS, canCopySnippet, resolveSnippet, type SnippetFormat } from '../lib/snippets'
@@ -48,6 +48,17 @@ export default function CopyAsMenu(props: {
   )
 
   const enabled = () => !!props.requestId && canCopySnippet(props.protocol)
+
+  // ⌘⇧C copies as cURL without opening the menu — the format people reach for
+  // 90% of the time. Listening here rather than in the keymap keeps the copy
+  // logic (and its error flashing) in the one component that owns it.
+  function onCopyAsCurl() {
+    if (!enabled()) return
+    const curl = SNIPPET_FORMATS.find((f) => f.id === 'curl')
+    if (curl) void copySnippet(curl)
+  }
+  onMount(() => window.addEventListener('apitool:copy-as-curl', onCopyAsCurl))
+  onCleanup(() => window.removeEventListener('apitool:copy-as-curl', onCopyAsCurl))
 
   function flash(label: string | null, err: string | null) {
     setCopied(label)

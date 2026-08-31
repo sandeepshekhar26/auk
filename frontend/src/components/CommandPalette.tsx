@@ -1,48 +1,7 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
-import {
-  appState,
-  commandPaletteOpen,
-  setCommandPaletteOpen,
-  openTab,
-  setShortcutSheetOpen,
-  setSettingsOpen,
-  setImportModalOpen,
-  setMigrateModalOpen,
-  setLoadError,
-  streamConsoleOpen,
-  setStreamConsoleOpen,
-  openExplorer,
-  setExplorerOpen,
-} from '../lib/store'
-import { createFolder, createRequest, duplicateRequest } from '../lib/data'
-import { setTheme } from '../lib/theme'
-import { wails } from '../lib/wails'
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from 'solid-js'
+import { appState, commandPaletteOpen, openTab, setCommandPaletteOpen } from '../lib/store'
 import type { CommandItem } from '../types'
-
-// SaveFileDialog returning "" means the user cancelled — a normal outcome,
-// not a failure, so only a thrown error surfaces through loadError.
-async function exportActiveWorkspace() {
-  if (!appState.activeWorkspaceId) return
-  try {
-    await wails.ExportWorkspace(appState.activeWorkspaceId)
-  } catch (err) {
-    setLoadError(err instanceof Error ? err.message : String(err))
-  }
-}
-
-// ExportWorkspaceOpenAPI is a Go binding (app_export.go). It auto-binds by
-// reflection on the next wails build; reached through a locally-typed view so
-// tsc/build stay green until then (same pattern as the mock-server bindings).
-async function exportActiveWorkspaceOpenAPI() {
-  if (!appState.activeWorkspaceId) return
-  try {
-    await (wails as unknown as { ExportWorkspaceOpenAPI(id: string): Promise<string> }).ExportWorkspaceOpenAPI(
-      appState.activeWorkspaceId,
-    )
-  } catch (err) {
-    setLoadError(err instanceof Error ? err.message : String(err))
-  }
-}
+import { availableCommands, chordKeys } from '../lib/keymap'
 
 const GROUP_LABEL: Record<CommandItem['group'], string> = {
   action: 'Actions',
@@ -60,53 +19,20 @@ export default function CommandPalette() {
   let inputRef: HTMLInputElement | undefined
 
   const items = createMemo<CommandItem[]>(() => {
-    const actionItems: CommandItem[] = [
-      { id: 'action:new-request', title: 'New Request', subtitle: '⌘N', group: 'action', run: () => void createRequest() },
-      { id: 'action:new-folder', title: 'New Folder', group: 'action', run: () => void createFolder(null) },
-      {
-        id: 'action:duplicate-request',
-        title: 'Duplicate Request',
-        subtitle: 'active tab',
-        group: 'action',
-        run: () => {
-          if (appState.activeTabId) void duplicateRequest(appState.activeTabId)
-        },
-      },
-      {
-        id: 'action:toggle-sidebar',
-        title: 'Toggle Sidebar',
-        subtitle: '⌘B',
-        group: 'action',
-        run: () => setExplorerOpen((v) => !v),
-      },
-      {
-        id: 'action:browse-requests',
-        title: 'Browse Requests',
-        group: 'action',
-        run: () => openExplorer('requests'),
-      },
-      { id: 'action:browse-history', title: 'Browse History', group: 'action', run: () => openExplorer('history') },
-      { id: 'action:import', title: 'Import…', group: 'action', run: () => setImportModalOpen(true) },
-      {
-        id: 'action:migrate-postman',
-        title: 'Migrate from Postman…',
-        subtitle: 'collections + environments',
-        group: 'action',
-        run: () => setMigrateModalOpen(true),
-      },
-      { id: 'action:export', title: 'Export Workspace (JSON)…', group: 'action', run: () => void exportActiveWorkspace() },
-      { id: 'action:export-openapi', title: 'Export as OpenAPI…', group: 'action', run: () => void exportActiveWorkspaceOpenAPI() },
-      {
-        id: 'action:stream-console',
-        title: streamConsoleOpen() ? 'Hide Stream Console' : 'Show Stream Console',
-        group: 'action',
-        run: () => setStreamConsoleOpen((v) => !v),
-      },
-      { id: 'action:open-settings', title: 'Open Settings', subtitle: '⌘,', group: 'action', run: () => setSettingsOpen(true) },
-      { id: 'action:theme-system', title: 'Theme: System', group: 'action', run: () => setTheme('system') },
-      { id: 'action:theme-light', title: 'Theme: Light', group: 'action', run: () => setTheme('light') },
-      { id: 'action:theme-dark', title: 'Theme: Dark', group: 'action', run: () => setTheme('dark') },
-    ]
+    // Actions come STRAIGHT from the command registry, filtered by whether
+    // each currently applies. The palette used to keep its own parallel list,
+    // which is how a command could have a shortcut but no palette entry (or
+    // the reverse). Now the two cannot disagree: one registry, two surfaces.
+    const actionItems: CommandItem[] = availableCommands().map((c) => ({
+      id: c.id,
+      title: c.title,
+      // The chord is the most useful subtitle there is — it teaches the
+      // shortcut at the moment someone reaches for the command by name, which
+      // is how a keyboard-first app trains its own users.
+      subtitle: c.chord ? chordKeys(c.chord).join(' ') : c.subtitle,
+      group: 'action',
+      run: c.run,
+    }))
     const requestItems: CommandItem[] = appState.requests.map((r) => ({
       id: `req:${r.id}`,
       title: r.name,
@@ -137,17 +63,30 @@ export default function CommandPalette() {
     setQuery('')
   }
 
+  // Escape only. ⌘K and ⌘/ are registry commands dispatched by App.tsx —
+  // this component owning them too meant two window listeners firing on one
+  // keystroke, which is exactly the class of bug the registry removes.
   function onKeyDown(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-      e.preventDefault()
-      setCommandPaletteOpen((v) => !v)
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === '/') {
-      e.preventDefault()
-      setShortcutSheetOpen((v) => !v)
-    }
     if (e.key === 'Escape' && commandPaletteOpen()) close()
   }
+
+  // Focus the search field whenever the palette opens.
+  //
+  // The bare `autofocus` attribute below never did this: Solid renders the
+  // input into a <Show> that mounts AFTER the browser's autofocus pass, so the
+  // attribute was inert and focus simply stayed wherever it already was. The
+  // palette was therefore unusable by keyboard alone — ⌘K opened it and your
+  // keystrokes went into whatever was focused before, which for anyone who had
+  // just pressed ⌘L meant silently typing into the request's URL field.
+  //
+  // requestAnimationFrame, not a bare call: the ref is assigned during the
+  // same render that mounts it, and focusing before the element is in the
+  // document is a no-op.
+  createEffect(
+    on(commandPaletteOpen, (open) => {
+      if (open) requestAnimationFrame(() => inputRef?.focus())
+    }),
+  )
 
   onMount(() => window.addEventListener('keydown', onKeyDown))
   onCleanup(() => window.removeEventListener('keydown', onKeyDown))
@@ -161,7 +100,6 @@ export default function CommandPalette() {
         >
           <input
             ref={inputRef}
-            autofocus
             class="w-full border-b border-edge bg-transparent px-4 py-3 text-base text-ink focus:outline-none"
             placeholder="Jump to a request, run a command…"
             value={query()}

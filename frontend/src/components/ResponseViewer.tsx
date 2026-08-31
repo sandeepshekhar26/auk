@@ -8,7 +8,7 @@ import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from
 import { unifiedMergeView } from '@codemirror/merge'
 import { jsonHighlightStyle, monoFontFamily } from '../lib/codeTheme'
 import type { Assertion, AssertionResult, KeyValue, RedirectHop, ResponseData, TestResult, TimingBreakdown } from '../types'
-import { appState, setLoadError } from '../lib/store'
+import { appState, setLoadError, responseTab, setResponseTab } from '../lib/store'
 import { wails } from '../lib/wails'
 import CopyAsMenu from './CopyAsMenu'
 
@@ -49,7 +49,6 @@ function Metric(props: { label: string; value: string }) {
   )
 }
 
-type Tab = 'body' | 'headers' | 'timing'
 type BodyMode = 'pretty' | 'raw'
 
 function decodeBody(bodyBase64: string): string {
@@ -157,7 +156,9 @@ function computeRedirectWarnings(chain: RedirectHop[]): RedirectWarning[] {
 }
 
 export default function ResponseViewer(props: { response: ResponseData | null; loading: boolean }) {
-  const [tab, setTab] = createSignal<Tab>('body')
+  // Tab selection lives in the store so ⌘⇧1…3 can drive it (lib/keymap.ts).
+  const tab = responseTab
+  const setTab = setResponseTab
   const [bodyMode, setBodyMode] = createSignal<BodyMode>('pretty')
   const [diffMode, setDiffMode] = createSignal(false)
   const [hasPrior, setHasPrior] = createSignal(false)

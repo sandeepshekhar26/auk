@@ -173,6 +173,27 @@ export function setSidebarMode(mode: SidebarMode): void {
 export const [environmentEditorOpen, setEnvironmentEditorOpen] = createSignal(false)
 export const [importModalOpen, setImportModalOpen] = createSignal(false)
 export const [migrateModalOpen, setMigrateModalOpen] = createSignal(false)
+// Request-editor and response tab selection live in the STORE, not inside the
+// two components, for one reason: the keyboard layer must be able to drive
+// them. While each component owned its own createSignal, "switch to the Auth
+// tab" was unreachable from anywhere else — which is precisely why an app that
+// calls itself keyboard-first had no shortcut for the tabs its users spend all
+// day in. See lib/keymap.ts.
+export type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'script' | 'assert' | 'perf'
+export const EDITOR_TABS: { id: EditorTab; label: string }[] = [
+  { id: 'params', label: 'Params' },
+  { id: 'headers', label: 'Headers' },
+  { id: 'body', label: 'Body' },
+  { id: 'auth', label: 'Auth' },
+  { id: 'script', label: 'Script' },
+  { id: 'assert', label: 'Assert' },
+  { id: 'perf', label: 'Perf' },
+]
+export const [editorTab, setEditorTab] = createSignal<EditorTab>('params')
+
+export type ResponseTab = 'body' | 'headers' | 'timing'
+export const [responseTab, setResponseTab] = createSignal<ResponseTab>('body')
+
 export const [shortcutSheetOpen, setShortcutSheetOpen] = createSignal(false)
 export const [streamConsoleOpen, setStreamConsoleOpen] = createSignal(false)
 export const [settingsOpen, setSettingsOpen] = createSignal(false)

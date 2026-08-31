@@ -1,5 +1,6 @@
 import { For, Show, onCleanup, onMount } from 'solid-js'
 import { shortcutSheetOpen, setShortcutSheetOpen } from '../lib/store'
+import { COMMANDS, chordKeys, type CommandGroup } from '../lib/keymap'
 
 // Dispatch contract: on Cmd/Ctrl+Enter this component fires
 // `window.dispatchEvent(new CustomEvent('apitool:send'))`, consumed by
@@ -8,24 +9,12 @@ import { shortcutSheetOpen, setShortcutSheetOpen } from '../lib/store'
 // one place per cross-component shortcut, dispatched as a CustomEvent
 // rather than each component adding its own competing window listener.
 
-interface ShortcutEntry {
-  keys: string[]
-  description: string
-}
-
-const SHORTCUTS: ShortcutEntry[] = [
-  { keys: ['⌘', 'K'], description: 'Open command palette — the primary way to get anywhere' },
-  { keys: ['⌘', 'B'], description: 'Toggle the requests/history drawer' },
-  { keys: ['⌘', 'Enter'], description: 'Send the active request' },
-  { keys: ['⌘', 'N'], description: 'New request' },
-  { keys: ['⌘', 'W'], description: 'Close the active request tab' },
-  { keys: ['⌘', '⇧', ']'], description: 'Next request tab' },
-  { keys: ['⌘', '⇧', '['], description: 'Previous request tab' },
-  { keys: ['⌘', 'F'], description: 'Search within the response body' },
-  { keys: ['⌘', ','], description: 'Open Settings' },
-  { keys: ['⌘', '/'], description: 'Toggle this shortcut sheet' },
-  { keys: ['Esc'], description: 'Close the active dialog or panel' },
-]
+// The sheet is GENERATED from the command registry, never hand-maintained.
+// The previous hand-written list had already drifted: it advertised shortcuts
+// in a fixed order with no notion of which applied, and every new binding was
+// a second edit someone had to remember. Now a command that exists is a
+// command that is documented, by construction.
+const GROUP_ORDER: CommandGroup[] = ['Request', 'Response', 'Navigation', 'Workspace', 'View']
 
 export default function ShortcutSheet() {
   function close() {
@@ -36,18 +25,11 @@ export default function ShortcutSheet() {
   // (kept in one place to avoid two listeners double-toggling the same
   // signal on the same keypress). This listener only owns ⌘Enter (send)
   // and Escape (close-while-open).
+  // Escape only. ⌘Enter (send) and ⌘/ (this sheet) are registry commands
+  // dispatched by App.tsx — this component used to own ⌘Enter, which meant a
+  // second window listener racing the one in App for the same keystroke.
   function onKeyDown(e: KeyboardEvent) {
-    const meta = e.metaKey || e.ctrlKey
-
-    if (meta && e.key === 'Enter') {
-      e.preventDefault()
-      window.dispatchEvent(new CustomEvent('apitool:send'))
-      return
-    }
-
-    if (e.key === 'Escape' && shortcutSheetOpen()) {
-      close()
-    }
+    if (e.key === 'Escape' && shortcutSheetOpen()) close()
   }
 
   onMount(() => window.addEventListener('keydown', onKeyDown))
@@ -69,31 +51,45 @@ export default function ShortcutSheet() {
               Esc
             </button>
           </div>
-          <table class="w-full text-sm">
-            <tbody>
-              <For each={SHORTCUTS}>
-                {(s) => (
-                  <tr class="border-b border-edge/60 last:border-0">
-                    <td class="px-4 py-2 text-ink-dim">{s.description}</td>
-                    <td class="px-4 py-2">
-                      <div class="flex justify-end gap-1">
-                        <For each={s.keys}>
-                          {(k) => (
-                            <kbd class="rounded border border-edge-strong bg-raised px-1.5 py-0.5 font-mono text-xs text-ink-dim">
-                              {k}
-                            </kbd>
+          <div class="max-h-[60vh] overflow-y-auto">
+            <For each={GROUP_ORDER}>
+              {(group) => {
+                const rows = () => COMMANDS.filter((c) => c.group === group && c.chord)
+                return (
+                  <Show when={rows().length > 0}>
+                    <div class="px-4 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
+                      {group}
+                    </div>
+                    <table class="w-full text-sm">
+                      <tbody>
+                        <For each={rows()}>
+                          {(c) => (
+                            <tr class="border-b border-edge/60 last:border-0">
+                              <td class="px-4 py-1.5 text-ink-dim">{c.title}</td>
+                              <td class="px-4 py-1.5">
+                                <div class="flex justify-end gap-1">
+                                  <For each={chordKeys(c.chord!)}>
+                                    {(k) => (
+                                      <kbd class="rounded border border-edge-strong bg-raised px-1.5 py-0.5 font-mono text-[11px] text-ink-dim">
+                                        {k}
+                                      </kbd>
+                                    )}
+                                  </For>
+                                </div>
+                              </td>
+                            </tr>
                           )}
                         </For>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-          <div class="border-t border-edge px-4 py-2 text-xs text-ink-faint">
-            Every shortcut works the same whether triggered from the keyboard, the command palette (⌘K), or a click —
-            one engine, one code path.
+                      </tbody>
+                    </table>
+                  </Show>
+                )
+              }}
+            </For>
+            <p class="px-4 py-3 text-[11px] leading-relaxed text-ink-faint">
+              Every command — including the ones with no shortcut — is searchable in the command
+              palette (⌘K).
+            </p>
           </div>
         </div>
       </div>

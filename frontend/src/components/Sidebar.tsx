@@ -889,6 +889,8 @@ export default function Sidebar() {
             <div class="p-2 pb-1">
               <input
                 ref={filterInput}
+                // Targeted by the ⌘⇧F "filter the request tree" command.
+                data-auk-sidebar-filter
                 class="h-8 w-full rounded-lg bg-field px-2.5 text-[12.5px] text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-edge-strong"
                 placeholder="Filter requests…"
                 value={sidebarFilter()}

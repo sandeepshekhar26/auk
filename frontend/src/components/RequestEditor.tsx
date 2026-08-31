@@ -1,5 +1,5 @@
 import { Show, Switch, Match, createEffect, createMemo, createSignal, For, on } from 'solid-js'
-import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, setSettingsOpen, setImportModalOpen, openExplorer, openTab, activeStreams, pushStreamEvent } from '../lib/store'
+import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, setSettingsOpen, setImportModalOpen, openExplorer, openTab, activeStreams, pushStreamEvent, EDITOR_TABS, editorTab, setEditorTab } from '../lib/store'
 import { licenseStatus } from '../lib/license'
 import { createRequest, saveRequestDebounced } from '../lib/data'
 import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
@@ -120,16 +120,10 @@ const SCRIPT_PANES: { id: ScriptField; label: string }[] = [
   { id: 'postResponseScript', label: 'Post-response' },
 ]
 
-type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'script' | 'assert' | 'perf'
-const TABS: { id: EditorTab; label: string }[] = [
-  { id: 'params', label: 'Params' },
-  { id: 'headers', label: 'Headers' },
-  { id: 'body', label: 'Body' },
-  { id: 'auth', label: 'Auth' },
-  { id: 'script', label: 'Script' },
-  { id: 'assert', label: 'Assert' },
-  { id: 'perf', label: 'Perf' },
-]
+// EditorTab / EDITOR_TABS now live in lib/store so the keyboard layer can
+// switch tabs (⌘1…⌘7). TABS is kept as a local alias so the JSX below reads
+// unchanged.
+const TABS = EDITOR_TABS
 
 export default function RequestEditor(props: {
   onSend: (requestId: string) => void
@@ -138,7 +132,8 @@ export default function RequestEditor(props: {
   isSending?: (id: string) => boolean
   onCancel?: (id: string) => void
 }) {
-  const [tab, setTab] = createSignal<EditorTab>('params')
+  const tab = editorTab
+  const setTab = setEditorTab
   const [scriptPane, setScriptPane] = createSignal<ScriptField>('preRequestScript')
   const [composeText, setComposeText] = createSignal('')
   // Description/notes area visibility. Opens automatically for a request that
@@ -442,6 +437,8 @@ export default function RequestEditor(props: {
               </select>
             </Show>
             <input
+              // Targeted by the ⌘L "focus the URL bar" command (lib/keymap.ts).
+              data-auk-url-input
               class="h-9 flex-1 rounded-lg bg-field px-3 font-mono text-sm text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
               value={req().url}
               placeholder={URL_PLACEHOLDER[req().protocol || 'http']}

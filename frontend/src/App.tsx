@@ -18,9 +18,10 @@ import McpToolView from './components/McpToolView'
 import FolderRunView from './components/FolderRunView'
 import UpdateBanner from './components/UpdateBanner'
 import TrialBadge from './components/TrialBadge'
-import { appState, closeTab, cycleTab, folderRunView, initSidebar, loadError, mcpToolView, setExplorerOpen, setLoadError, setMcpApprovals, setSettingsOpen } from './lib/store'
+import { appState, folderRunView, initSidebar, loadError, mcpToolView, setLoadError, setMcpApprovals, setSettingsOpen } from './lib/store'
 import { events, wails } from './lib/wails'
-import { createRequest, flushRequestSave, loadAll, loadHistory, loadWorkspaceData, refreshEnvironments } from './lib/data'
+import { duplicateChords, resolveCommand } from './lib/keymap'
+import { flushRequestSave, loadAll, loadHistory, loadWorkspaceData, refreshEnvironments } from './lib/data'
 import { initTheme } from './lib/theme'
 import { initLicense, licenseStatus } from './lib/license'
 import { initUpdateCheck } from './lib/updater'
@@ -81,6 +82,15 @@ export default function App() {
     events.EventsOn('mcp:approval', (payload: MCPApproval) => {
       if (payload?.id) setMcpApprovals((q) => [...q, payload])
     })
+
+    // A duplicated chord means two commands silently compete for one
+    // keystroke — the exact failure the central registry exists to make
+    // findable. Surfaced in dev only; shipping with one would be a bug, and
+    // the check is cheap enough to leave in permanently.
+    if (import.meta.env.DEV) {
+      const dupes = duplicateChords()
+      if (dupes.length) console.error('keymap: duplicate chords bound', dupes)
+    }
   })
 
   // Closing the last tab must clear the response pane. Without this the app
@@ -103,41 +113,19 @@ export default function App() {
     ),
   )
 
+  // ONE dispatcher for every shortcut in the app. What each chord does, and
+  // whether it currently applies, is declared in lib/keymap.ts — this function
+  // deliberately knows nothing about individual commands, so a new shortcut is
+  // a registry entry rather than another branch here (and another line the
+  // shortcut sheet could forget to mention).
   function onGlobalShortcuts(e: KeyboardEvent) {
-    const meta = e.metaKey || e.ctrlKey
-    if (meta && e.key.toLowerCase() === 'n') {
-      e.preventDefault()
-      createRequest().catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))
-    }
-    if (meta && e.key.toLowerCase() === 'b') {
-      e.preventDefault()
-      setExplorerOpen((v) => !v)
-    }
-    if (meta && e.key.toLowerCase() === 'w') {
-      if (appState.activeTabId) {
-        e.preventDefault()
-        closeTab(appState.activeTabId)
-      }
-    }
-    // VSCode's convention for next/previous editor tab — likely already
-    // muscle memory for this app's audience.
-    if (meta && e.shiftKey && e.key === ']') {
-      e.preventDefault()
-      cycleTab(1)
-    }
-    if (meta && e.shiftKey && e.key === '[') {
-      e.preventDefault()
-      cycleTab(-1)
-    }
-    // The response body's "Search" button has always been labeled "(⌘F)",
-    // but nothing dispatched it globally — it only worked by fluke, if the
-    // CodeMirror instance already happened to have keyboard focus (its own
-    // searchKeymap binds Mod-f internally). Broadcasting it here means the
-    // shortcut works regardless of what currently has focus, matching what
-    // the label already promised.
-    if (meta && e.key.toLowerCase() === 'f') {
-      e.preventDefault()
-      window.dispatchEvent(new CustomEvent('apitool:search-body'))
+    const command = resolveCommand(e)
+    if (!command) return
+    e.preventDefault()
+    try {
+      command.run()
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err))
     }
   }
 
