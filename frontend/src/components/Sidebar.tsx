@@ -889,7 +889,7 @@ export default function Sidebar() {
             <div class="p-2 pb-1">
               <input
                 ref={filterInput}
-                class="w-full rounded bg-field px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-edge-strong"
+                class="h-8 w-full rounded-lg bg-field px-2.5 text-[12.5px] text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-edge-strong"
                 placeholder="Filter requests…"
                 value={sidebarFilter()}
                 onInput={(e) => setSidebarFilter(e.currentTarget.value)}

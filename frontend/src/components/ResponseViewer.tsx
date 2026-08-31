@@ -395,6 +395,34 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                 </div>
               </div>
 
+              {/* The waterfall, inline and always on view when timing exists —
+                  the Timing tab keeps the labelled table, but the shape of a
+                  request (mostly TLS? mostly server wait?) is worth a glance
+                  without a click. */}
+              <Show when={res().timing}>
+                {(() => {
+                  const phases = createMemo(() => timingPhases(res().timing!))
+                  return (
+                    <div class="flex items-center gap-3 border-b border-edge px-3 py-2">
+                      <div class="flex h-[5px] flex-1 gap-px overflow-hidden rounded-full bg-field">
+                        <For each={phases().filter((p) => p.pct > 0.5)}>
+                          {(p) => <div class={`${p.colorClass}`} style={{ width: `${p.pct}%` }} title={`${p.label}: ${p.ms}ms`} />}
+                        </For>
+                      </div>
+                      <For each={phases().filter((p) => p.ms > 0).slice(0, 3)}>
+                        {(p) => (
+                          <span class="flex shrink-0 items-center gap-1 text-[10px] text-ink-muted">
+                            <span class={`h-1.5 w-1.5 rounded-[2px] ${p.colorClass}`} />
+                            {p.label.split(' ')[0]}
+                            <span class="font-mono tabular-nums text-ink-dim">{p.ms}ms</span>
+                          </span>
+                        )}
+                      </For>
+                    </div>
+                  )
+                })()}
+              </Show>
+
               {/* Surfaces resp.Error (a dial failure, a policy rejection, a
                   not-yet-supported gRPC method, ...) — without this, a
                   failed send showed only the bare "0 Error" status badge
@@ -424,19 +452,26 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
                   const allPassed = () => results().every((r) => r.passed)
                   const passCount = () => results().filter((r) => r.passed).length
                   return (
-                    <details class="border-b border-edge" open>
-                      <summary class="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-xs">
+                    /* The card treatment (tinted, rounded, inset) instead of a
+                       full-width banner: pass/fail is the verdict on the whole
+                       send, so it reads as a labelled result, not more chrome. */
+                    <details
+                      class="mx-3 mt-2.5 rounded-lg border px-3 py-2"
+                      classList={{
+                        'border-accent/25 bg-accent/5': allPassed(),
+                        'border-danger-edge bg-danger-bg/30': !allPassed(),
+                      }}
+                      open
+                    >
+                      <summary class="flex cursor-pointer list-none items-center gap-2 text-xs">
                         <span
-                          class="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                          classList={{ 'bg-accent text-accent-contrast': allPassed(), 'bg-danger text-accent-contrast': !allPassed() }}
+                          class="font-bold tracking-wide"
+                          classList={{ 'text-accent-fg': allPassed(), 'text-danger': !allPassed() }}
                         >
-                          {allPassed() ? 'ASSERTIONS PASSED' : 'ASSERTIONS FAILED'}
-                        </span>
-                        <span class="text-ink-muted">
-                          {passCount()}/{results().length} passed
+                          {allPassed() ? '✓' : '✗'} {passCount()} OF {results().length} ASSERTIONS PASSED
                         </span>
                       </summary>
-                      <div class="flex flex-col gap-0.5 px-2 pb-2">
+                      <div class="mt-1.5 flex flex-col gap-1">
                         <For each={results()}>
                           {(r) => (
                             <div class="flex items-center gap-2 font-mono text-[11px]">
