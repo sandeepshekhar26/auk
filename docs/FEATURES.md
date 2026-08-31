@@ -178,7 +178,7 @@ silent hang. **Batch send**: a ▶ button on any folder runs every request
 inside it (recursing into subfolders), with an aggregate pass/fail summary.
 The same protocols also run headless via the CLI.
 
-**Auth**: Basic, Bearer, API Key, JWT, OAuth 2.0 (client credentials + authorization code with PKCE via the system browser),
+**Auth**: Basic, Bearer, API Key, JWT, OAuth 2.0 (client credentials + authorization code with PKCE via the system browser), AWS SigV4 (pasted keys or an AWS CLI profile/SSO),
 OAuth 1.0 (HMAC-SHA1), AWS Signature v4, client certificates (mTLS, with
 custom CA and skip-verify), a custom HTTP/HTTPS proxy (independent of auth
 and TLS), and **1Password** — any environment variable's value can be an
