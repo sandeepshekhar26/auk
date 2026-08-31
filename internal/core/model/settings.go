@@ -14,6 +14,15 @@ type AppSettings struct {
 	// not ephemeral, so a saved .mcp.json config stays valid across
 	// restarts). 0 means the default.
 	MCPPort int `yaml:"mcpPort,omitempty" json:"mcpPort"`
+	// MCPScope is the capability grant the embedded MCP server runs at:
+	// "read-only", "run", or "write". Empty means the run default, which is
+	// what every existing settings.yaml written before this field means.
+	//
+	// The GUI defaults to "write" when the user turns the server on from
+	// Settings, because the GUI is the one host that can ASK before each edit
+	// — every authoring call goes through the in-app approval modal. Someone
+	// who wants an agent that can look but never touch sets "read-only" here.
+	MCPScope string `yaml:"mcpScope,omitempty" json:"mcpScope,omitempty"`
 	// SidebarMode is "docked" (persistent left tree, the default — empty
 	// string means docked) or "overlay" (the original slide-over drawer).
 	SidebarMode string `yaml:"sidebarMode,omitempty" json:"sidebarMode"`

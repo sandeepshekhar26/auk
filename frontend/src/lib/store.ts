@@ -206,10 +206,22 @@ export const [loadError, setLoadError] = createSignal<string | null>(null)
 
 // Pending MCP approval prompts (agent-initiated mutating requests waiting on
 // Allow/Deny). A queue: multiple agent calls can stack up.
+/**
+ * A pending agent approval. Two shapes share one queue:
+ *
+ *   kind undefined | 'request' — an outbound call: method + url
+ *   kind 'write'               — a workspace EDIT: tool + summary
+ *
+ * `kind` is optional because the request payload predates it; an approval
+ * without one is a request, which is what every emitter used to send.
+ */
 export interface MCPApproval {
   id: string
-  method: string
-  url: string
+  kind?: 'request' | 'write'
+  method?: string
+  url?: string
+  tool?: string
+  summary?: string
 }
 export const [mcpApprovals, setMcpApprovals] = createSignal<MCPApproval[]>([])
 

@@ -12,10 +12,23 @@
 // or in .mcp.json:
 //
 //	{ "mcpServers": { "apitool": { "command": "/path/to/apitool-mcp" } } }
+//
+// The capability scope is chosen with -scope (or APITOOL_MCP_SCOPE):
+//
+//	read-only   inspect the workspace; nothing is sent or written
+//	run         (default) read + execute requests, folders and load tests
+//	write       + author the workspace: create/update/delete requests
+//
+// `write` is opt-in because this binary is headless: there is nobody to
+// prompt, so starting it with that flag IS the consent. Prefer running the
+// GUI's embedded server for agent authoring, where each change is approved
+// in-app — and either way, every edit lands as plain YAML you review in a
+// git diff.
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 
@@ -33,6 +46,15 @@ func main() {
 }
 
 func run() error {
+	scopeFlag := flag.String("scope", os.Getenv("APITOOL_MCP_SCOPE"),
+		"capability scope: read-only, run (default), or write")
+	flag.Parse()
+
+	scope, err := mcpserver.ParseScope(*scopeFlag)
+	if err != nil {
+		return err
+	}
+
 	dir := appcore.DefaultWorkspaceDir()
 	if v := os.Getenv("APITOOL_WORKSPACE_DIR"); v != "" {
 		dir = v
@@ -43,7 +65,16 @@ func run() error {
 		return fmt.Errorf("open workspace %q: %w", dir, err)
 	}
 
-	srv := mcpserver.New(engine, store)
+	// AllowAllWrites, not a prompt: this process has no UI. The human
+	// consented by launching it with -scope=write, and the review surface is
+	// the git diff the edits land in.
+	srv, err := mcpserver.NewWithOptions(engine, store, mcpserver.Options{
+		Scope:  scope,
+		Writes: mcpserver.AllowAllWrites{},
+	})
+	if err != nil {
+		return err
+	}
 	// StdioTransport is what Claude Code's .mcp.json launches by default:
 	// the client speaks JSON-RPC over this process's stdin/stdout.
 	return srv.Run(context.Background(), &mcp.StdioTransport{})

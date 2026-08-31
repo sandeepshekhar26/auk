@@ -906,7 +906,30 @@ func (a *App) startMCP() error {
 	if port == 0 {
 		port = defaultMCPPort
 	}
-	hs, err := mcpserver.StartHTTP(mcpserver.New(a.engine, a.store), port, token)
+	// The GUI server runs at WRITE scope, because this is the one host that
+	// can actually ask: every authoring call routes through the same in-app
+	// approval modal that already gates mutating requests. The headless stdio
+	// binary defaults to run scope for exactly the opposite reason.
+	// Default to write scope for the GUI: turning the server on in Settings is
+	// the act of inviting an agent in, and every edit it then attempts is
+	// approved individually. A user who wants read-only or run sets mcpScope
+	// in ~/.auk/settings.yaml.
+	configured := a.GetSettings().MCPScope
+	if configured == "" {
+		configured = string(mcpserver.ScopeWrite)
+	}
+	scope, err := mcpserver.ParseScope(configured)
+	if err != nil {
+		return err
+	}
+	srv, err := mcpserver.NewWithOptions(a.engine, a.store, mcpserver.Options{
+		Scope:  scope,
+		Writes: &approvalWriteGuard{app: a},
+	})
+	if err != nil {
+		return err
+	}
+	hs, err := mcpserver.StartHTTP(srv, port, token)
 	if err != nil {
 		return err
 	}
@@ -1022,6 +1045,51 @@ func (p *approvalPolicy) Authorize(ctx context.Context, dc core.DispatchContext)
 		return core.Decision{Allow: false, Reason: "approval timed out (no user response)"}, nil
 	case <-ctx.Done():
 		return core.Decision{Allow: false, Reason: "request cancelled"}, nil
+	}
+}
+
+// approvalWriteGuard gates an agent's WORKSPACE EDITS behind the same modal
+// that gates its outbound requests — but with a different question.
+//
+// approvalPolicy asks "may this agent send a DELETE to this URL?"; this asks
+// "may this agent rewrite your collection?". Sharing the modal keeps one place
+// where a user says yes to an agent; keeping the payloads distinct keeps the
+// prompt truthful, since a workspace edit has no URL to show.
+type approvalWriteGuard struct {
+	app *App
+}
+
+func (g *approvalWriteGuard) AuthorizeWrite(ctx context.Context, intent mcpserver.WriteIntent) (bool, string) {
+	id := uuid.NewString()
+	ch := make(chan bool, 1)
+	g.app.approvalMu.Lock()
+	g.app.approvals[id] = ch
+	g.app.approvalMu.Unlock()
+	defer func() {
+		g.app.approvalMu.Lock()
+		delete(g.app.approvals, id)
+		g.app.approvalMu.Unlock()
+	}()
+
+	wailsruntime.EventsEmit(g.app.ctx, "mcp:approval", map[string]string{
+		"id": id,
+		// `kind` lets the modal render this as a workspace change rather than
+		// a request; `summary` is the one line the user decides on.
+		"kind":    "write",
+		"tool":    intent.Tool,
+		"summary": intent.Summary,
+	})
+
+	select {
+	case allowed := <-ch:
+		if allowed {
+			return true, ""
+		}
+		return false, "the user declined this change"
+	case <-time.After(60 * time.Second):
+		return false, "approval timed out (no user response)"
+	case <-ctx.Done():
+		return false, "cancelled"
 	}
 }
 

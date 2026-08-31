@@ -27,16 +27,39 @@ export default function MCPApprovalModal() {
             aria-label="MCP request approval"
             class="w-full max-w-md rounded-lg border border-warn-edge bg-surface shadow-2xl"
           >
-            <div class="border-b border-edge px-4 py-3">
-              <h2 class="text-sm font-semibold text-ink">Agent wants to send a request</h2>
-              <p class="mt-0.5 text-xs text-ink-muted">
-                An MCP client (e.g. Claude Code) is asking to run a request that can change data.
-              </p>
-            </div>
-            <div class="flex items-center gap-2 px-4 py-3 font-mono text-sm">
-              <span class="rounded bg-warn/15 px-1.5 py-0.5 text-xs font-semibold text-warn">{a().method}</span>
-              <span class="break-all text-ink-dim">{a().url}</span>
-            </div>
+            {/* Two different questions share this modal, and they must not
+                borrow each other's words: sending a request names a method and
+                URL, editing the workspace names what will change on disk.
+                Rendering a write with an empty method chip would be a prompt
+                nobody could decide on. */}
+            <Show
+              when={a().kind === 'write'}
+              fallback={
+                <>
+                  <div class="border-b border-edge px-4 py-3">
+                    <h2 class="text-sm font-semibold text-ink">Agent wants to send a request</h2>
+                    <p class="mt-0.5 text-xs text-ink-muted">
+                      An MCP client (e.g. Claude Code) is asking to run a request that can change data.
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2 px-4 py-3 font-mono text-sm">
+                    <span class="rounded bg-warn/15 px-1.5 py-0.5 text-xs font-semibold text-warn">{a().method}</span>
+                    <span class="break-all text-ink-dim">{a().url}</span>
+                  </div>
+                </>
+              }
+            >
+              <div class="border-b border-edge px-4 py-3">
+                <h2 class="text-sm font-semibold text-ink">Agent wants to change your workspace</h2>
+                <p class="mt-0.5 text-xs text-ink-muted">
+                  This edits files in your workspace. You will see it as a normal git diff afterwards.
+                </p>
+              </div>
+              <div class="px-4 py-3">
+                <p class="text-sm text-ink">{a().summary}</p>
+                <p class="mt-1 font-mono text-[11px] text-ink-faint">{a().tool}</p>
+              </div>
+            </Show>
             <Show when={mcpApprovals().length > 1}>
               <p class="px-4 pb-1 text-xs text-ink-faint">+{mcpApprovals().length - 1} more waiting</p>
             </Show>

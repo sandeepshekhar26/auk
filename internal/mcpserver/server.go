@@ -1,5 +1,7 @@
 // Package mcpserver holds the ONE implementation of the app's MCP tool
-// surface (list_workspaces, list_requests, run_request, run_perf_test).
+// surface. v2 covers three families: READ (inspect a workspace), RUN (execute
+// requests, folders and load tests) and WRITE (author the workspace), gated by
+// the Scope the server was started with — see scope.go.
 // Both entrypoints terminate here (docs/02-architecture.md §MCP):
 //   - cmd/mcp: the stdio binary launched by .mcp.json / `claude mcp add`
 //   - the GUI's embedded Streamable-HTTP server (Settings → MCP Server),
@@ -24,23 +26,72 @@ import (
 // Version is reported to MCP clients in the initialize handshake.
 const Version = "0.1.0"
 
-// Store is the read-only subset of storage the listing tools need (the
-// engine handles all execution). An interface so tests can use a fake.
+// Store is the read subset of storage the tools need (the engine handles all
+// execution). An interface so tests can use a fake.
+//
+// The WRITE tools require more than this, and deliberately do NOT widen it:
+// they type-assert for the mutating methods at call time (see writeStore in
+// tools_write.go), so a host may construct a run-scoped server over a store
+// that physically cannot write.
 type Store interface {
 	ListWorkspaces() []model.Workspace
 	ListRequests(workspaceID model.ID) []model.RequestDef
 	GetRequest(id model.ID) (model.RequestDef, error)
+	ListFolders(workspaceID model.ID) []model.Folder
+	// ListEnvironmentsRaw returns environments with keychain-backed secret
+	// values UNRESOLVED. The raw form is the only one this package ever reads:
+	// no MCP tool has a reason to hold a real secret value in memory.
+	ListEnvironmentsRaw(workspaceID model.ID) []model.Environment
 }
 
-// New builds the MCP server with the full tool surface wired to the given
-// engine + store. Every run_request/run_perf_test call passes the engine's
-// Dispatch policy chokepoint with origin "mcp", so whatever PolicyEngine the
-// host installed (allow-all for the headless stdio binary, approval-gated
-// for the embedded GUI server) applies uniformly.
-func New(engine *core.Engine, store Store) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "apitool", Version: Version}, nil)
-	h := &handlers{engine: engine, store: store}
+// Options configures a server. The zero value is a run-scoped server with no
+// write guard, which is the safe default: writes are refused because no
+// authoring tool is registered.
+type Options struct {
+	Scope Scope
+	// Writes authorizes workspace mutations. REQUIRED when Scope is
+	// ScopeWrite; New refuses the combination without it rather than
+	// defaulting to permissive.
+	Writes WriteGuard
+}
 
+// New builds a run-scoped MCP server — the historical behaviour, kept so
+// existing callers compile unchanged.
+func New(engine *core.Engine, store Store) *mcp.Server {
+	s, err := NewWithOptions(engine, store, Options{Scope: ScopeRun})
+	if err != nil {
+		// Unreachable: ScopeRun needs no guard. A panic here would mean the
+		// validation below changed without this caller being updated.
+		panic("mcpserver.New: " + err.Error())
+	}
+	return s
+}
+
+// NewWithOptions builds the MCP server for a given capability scope.
+//
+// Tools are REGISTERED BY SCOPE rather than refused at call time, so a
+// read-only server's tools/list simply does not contain run_request or
+// create_request. An agent then plans against what it can actually do instead
+// of discovering the boundary by being told no — and a refusal never gets
+// mistaken for a transient failure worth retrying.
+//
+// Every run_* call still passes the engine's Dispatch policy chokepoint with
+// origin "mcp", so whatever PolicyEngine the host installed (allow-all for the
+// headless stdio binary, approval-gated for the embedded GUI server) applies
+// on top of the scope.
+func NewWithOptions(engine *core.Engine, store Store, opts Options) (*mcp.Server, error) {
+	scope := opts.Scope
+	if scope == "" {
+		scope = ScopeRun
+	}
+	if scope.allowsWrite() && opts.Writes == nil {
+		return nil, fmt.Errorf("mcpserver: scope %q requires a WriteGuard", scope)
+	}
+
+	s := mcp.NewServer(&mcp.Implementation{Name: "apitool", Version: Version}, nil)
+	h := &handlers{engine: engine, store: store, writes: opts.Writes, scope: scope}
+
+	// ---- read: always available ----
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_workspaces",
 		Description: "List all API workspaces (top-level collections of saved requests).",
@@ -52,21 +103,89 @@ func New(engine *core.Engine, store Store) *mcp.Server {
 	}, h.listRequests)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "run_request",
-		Description: "Execute a saved API request by id and return the response status, headers, body, and assertion results. Optionally resolve variables against an environment.",
-	}, h.runRequest)
+		Name:        "get_request",
+		Description: "Get the full definition of one saved request: headers, query and path params, body, auth scheme, assertions and scripts. Credentials are never returned.",
+	}, h.getRequest)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "run_perf_test",
-		Description: "Run a k6 load test against a saved request and return throughput, latency percentiles, and SLA-threshold pass/fail. Requires the k6 binary to be available.",
-	}, h.runPerfTest)
+		Name:        "search_requests",
+		Description: "Find saved requests by name, URL or method across one workspace or all of them. Use this instead of listing everything when looking for a specific request.",
+	}, h.searchRequests)
 
-	return s
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "list_folders",
+		Description: "List the folders in a workspace. A folder is the unit that run_folder executes as a test suite.",
+	}, h.listFolders)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "list_environments",
+		Description: "List a workspace's environments and the NAMES of their variables. Values require resolve_variables; secret values are never returned.",
+	}, h.listEnvironments)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "resolve_variables",
+		Description: "Show what ${variable} references resolve to in a given environment. Secret values (stored in the OS keychain) are redacted to a [secret:name] placeholder and can never be read.",
+	}, h.resolveVariables)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_last_response",
+		Description: "Get the most recent response for a request WITHOUT re-sending it. Use this to diagnose a failure instead of re-running a request that may have side effects.",
+	}, h.getLastResponse)
+
+	// ---- run ----
+	if scope.allowsRun() {
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "run_request",
+			Description: "Execute a saved API request by id and return the response status, headers, body, and assertion results. Optionally resolve variables against an environment.",
+		}, h.runRequest)
+
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "run_folder",
+			Description: "Run every request in a folder as a test suite — the same execution CI performs — and return per-request pass/fail with reasons.",
+		}, h.runFolder)
+
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "run_perf_test",
+			Description: "Run a k6 load test against a saved request and return throughput, latency percentiles, and SLA-threshold pass/fail. Requires the k6 binary to be available.",
+		}, h.runPerfTest)
+	}
+
+	// ---- write ----
+	if scope.allowsWrite() {
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "create_request",
+			Description: "Create a new saved request in a workspace. The result is plain YAML on disk that the user reviews as a git diff.",
+		}, h.createRequest)
+
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "update_request",
+			Description: "Update fields of an existing request. Omitted fields are left unchanged; supplying headers or queryParams REPLACES that whole list.",
+		}, h.updateRequest)
+
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "delete_request",
+			Description: "Delete a saved request permanently.",
+		}, h.deleteRequest)
+
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "create_folder",
+			Description: "Create a folder to group requests. Folders are the unit run_folder executes.",
+		}, h.createFolder)
+
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "set_environment_variable",
+			Description: "Set a plain (non-secret) environment variable. Secret variables live in the OS keychain and cannot be set this way.",
+		}, h.setEnvVar)
+	}
+
+	return s, nil
 }
 
 type handlers struct {
 	engine *core.Engine
 	store  Store
+	writes WriteGuard
+	scope  Scope
 }
 
 // ---- list_workspaces ----
