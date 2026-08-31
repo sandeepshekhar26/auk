@@ -175,7 +175,14 @@ export interface AuthConfig {
     scopes?: string[]
     audience?: string
   }
-  awsSigV4?: { accessKeyId: string; secretAccessKey: string; region: string; service: string; sessionToken?: string }
+  awsSigV4?: {
+    profile?: string
+    accessKeyId: string
+    secretAccessKey: string
+    region: string
+    service: string
+    sessionToken?: string
+  }
   oauth1?: { consumerKey: string; consumerSecret: string; token?: string; tokenSecret?: string }
   digest?: DigestAuth | null
 }

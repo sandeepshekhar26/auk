@@ -151,14 +151,23 @@ export default function EnvironmentEditor() {
     return env.secrets.includes(varKey)
   }
 
-  // A variable typed as an op://vault/item/field reference resolves through
-  // the 1Password CLI at send time (internal/templating.Engine.Resolve) —
-  // this just checks the CURRENTLY DISPLAYED value (the secret-values draft
-  // when the row is toggled to Secret, otherwise the plain value) so the
-  // hint tracks whatever the user is looking at right now.
-  function isOnePasswordRef(env: (typeof appState.environments)[number], v: KeyValue) {
+  // A variable can hold a SECRET REFERENCE instead of a literal, resolved at
+  // send time by internal/secretref: `op://vault/item/field` through the
+  // user's 1Password CLI, or `env://.env#KEY` from the project's own dotenv
+  // file. Checks the CURRENTLY DISPLAYED value (the secret-values draft when
+  // the row is toggled to Secret, otherwise the plain value) so the hint
+  // tracks whatever the user is looking at right now.
+  //
+  // The scheme list is duplicated from Go deliberately: this is a cosmetic
+  // badge, and wiring a binding call per keystroke to render one label would
+  // cost far more than it saves. A scheme missing here renders no badge; it
+  // still resolves.
+  const REF_SCHEMES = ['op://', 'env://'] as const
+
+  function refScheme(env: (typeof appState.environments)[number], v: KeyValue): string | null {
     const displayed = isSecret(env, v.key) ? (secretValues()[secretKey(env.id, v.key)] ?? '') : v.value
-    return displayed.startsWith('op://')
+    const hit = REF_SCHEMES.find((p) => displayed.startsWith(p))
+    return hit ? hit.replace('://', '') : null
   }
 
   function toggleSecret(envId: string, index: number, checked: boolean) {
@@ -400,22 +409,34 @@ export default function EnvironmentEditor() {
                             >
                               ✕
                             </button>
-                            <Show when={isOnePasswordRef(env(), v)} fallback={<span />}>
-                              <span
-                                class="whitespace-nowrap text-[10px] font-medium"
-                                classList={{
-                                  'text-accent-fg': opAvailable() === true,
-                                  'text-danger': opAvailable() === false,
-                                  'text-ink-faint': opAvailable() === null,
-                                }}
-                                title={
-                                  opAvailable() === false
-                                    ? '1Password CLI (op) not found on PATH — install it to resolve this reference'
-                                    : '1Password reference — resolved at send time via the op CLI'
-                                }
-                              >
-                                {opAvailable() === false ? '⚠ op not found' : '1Password'}
-                              </span>
+                            <Show when={refScheme(env(), v)} fallback={<span />}>
+                              {(scheme) => (
+                                <span
+                                  class="whitespace-nowrap text-[10px] font-medium"
+                                  classList={{
+                                    // The availability warning applies only to
+                                    // op://, which needs an external CLI.
+                                    // env:// reads a file and is always ready,
+                                    // so flagging it amber would be a warning
+                                    // about nothing.
+                                    'text-danger': scheme() === 'op' && opAvailable() === false,
+                                    'text-accent-fg': !(scheme() === 'op' && opAvailable() === false),
+                                  }}
+                                  title={
+                                    scheme() === 'op'
+                                      ? opAvailable() === false
+                                        ? '1Password CLI (op) not found on PATH — install it to resolve this reference'
+                                        : '1Password reference — resolved at send time via the op CLI'
+                                      : 'dotenv reference — read from your project’s .env at send time; AUK never stores a copy'
+                                  }
+                                >
+                                  {scheme() === 'op'
+                                    ? opAvailable() === false
+                                      ? '⚠ op not found'
+                                      : '1Password'
+                                    : '.env'}
+                                </span>
+                              )}
                             </Show>
                           </>
                         )}

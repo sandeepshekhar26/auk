@@ -20,6 +20,7 @@ import (
 	sseprotocol "apitool/internal/protocols/sse"
 	wsprotocol "apitool/internal/protocols/ws"
 	"apitool/internal/scripting"
+	"apitool/internal/secretref"
 	"apitool/internal/storage"
 	"apitool/internal/templating"
 )
@@ -49,7 +50,10 @@ func NewEngine(dir string) (*core.Engine, *storage.FileStore, error) {
 	// browser sign-in survives an app restart. storage.KeyringSecretStore
 	// satisfies auth.SecretStore structurally — no cross-import needed.
 	engine := core.NewEngine(store, nil, auth.NewWithSecretStore(storage.NewKeyringSecretStore()), nil)
-	engine.Templater = templating.New(engine)
+	// Secret references (op://, env://) resolve through one registry, anchored
+	// at the workspace directory so a relative env:// path means "this
+	// project's .env" and cannot wander the filesystem.
+	engine.Templater = templating.New(engine).WithSecretRefs(secretref.Default(dir))
 	engine.Asserter = asserter{}
 	engine.Scripter = scripting.New()
 	engine.RegisterProtocol(httpprotocol.New())

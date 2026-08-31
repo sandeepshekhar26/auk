@@ -193,7 +193,7 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
     }))
   }
 
-  function setAWSSigV4(field: 'accessKeyId' | 'secretAccessKey' | 'region' | 'service' | 'sessionToken', value: string) {
+  function setAWSSigV4(field: 'accessKeyId' | 'secretAccessKey' | 'region' | 'service' | 'sessionToken' | 'profile', value: string) {
     setAppState('requests', props.requestIndex, 'authRef', 'awsSigV4', (prev) => ({
       accessKeyId: prev?.accessKeyId ?? '',
       secretAccessKey: prev?.secretAccessKey ?? '',
@@ -429,6 +429,23 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
 
       <Show when={auth().kind === 'awsSigV4'}>
         <div class="mt-3 flex max-w-sm flex-col gap-2">
+          {/* Profile comes FIRST because it is the answer for most people
+              now: SSO and assumed-role credentials are temporary, so there is
+              no key pair to paste. The fields below stay for the accounts
+              that still issue long-lived keys. */}
+          <Field label="AWS profile (recommended)">
+            <input
+              class={inputClass}
+              placeholder="default, or a profile from ~/.aws/config"
+              value={auth().awsSigV4?.profile ?? ''}
+              onInput={(e) => setAWSSigV4('profile', e.currentTarget.value)}
+            />
+          </Field>
+          <p class="text-[11px] leading-relaxed text-ink-faint">
+            Uses your own AWS CLI to fetch credentials at send time — SSO sessions, assumed roles
+            and credential processes all work, and nothing is stored by AUK. A profile takes
+            precedence over the keys below.
+          </p>
           <Field label="Access Key ID">
             <input
               class={inputClass}

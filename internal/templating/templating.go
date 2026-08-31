@@ -27,7 +27,7 @@ import (
 	"apitool/internal/cookiejar"
 	"apitool/internal/core"
 	"apitool/internal/core/model"
-	"apitool/internal/onepassword"
+	"apitool/internal/secretref"
 )
 
 var refPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
@@ -69,16 +69,43 @@ type Engine struct {
 	funcs    map[string]Func
 	resolver ChainResolver
 	cookies  *cookiejar.Jar
+	// secrets resolves scheme-prefixed references (op://, env://) found in
+	// environment variable VALUES. Nil is valid — every value is then a
+	// literal, which is what a bare New() gives tests.
+	secrets *secretref.Registry
 }
 
 // New builds a templating Engine. resolver may be nil (e.g. in tests that
 // don't exercise response() refs); a nil resolver makes any response() ref
 // fail with a clear error instead of panicking.
 func New(resolver ChainResolver) *Engine {
-	e := &Engine{funcs: make(map[string]Func), resolver: resolver, cookies: cookiejar.New()}
+	// A registry is installed by DEFAULT, not opt-in. Without one, a value
+	// like op://vault/item/token stops being a reference and becomes a
+	// literal — which means sending the string "op://vault/item/token" to a
+	// server as a bearer token instead of failing with "1Password CLI not
+	// found". Silently transmitting a reference where a credential belongs is
+	// the worst of the three possible behaviours.
+	//
+	// The default has no workspace directory, so relative env:// paths are
+	// refused; appcore replaces it via WithSecretRefs with one anchored at the
+	// workspace it opened.
+	e := &Engine{
+		funcs: make(map[string]Func), resolver: resolver, cookies: cookiejar.New(),
+		secrets: secretref.Default(""),
+	}
 	e.registerBuiltins()
 	e.registerExtra()
 	e.registerRandom()
+	return e
+}
+
+// WithSecretRefs installs the registry that resolves op:// and env://
+// references in variable values. Separate from New so the registry can be
+// built with the workspace directory the app actually opened — and so a test
+// engine has none by default rather than reaching for the user's real
+// 1Password or .env files.
+func (e *Engine) WithSecretRefs(r *secretref.Registry) *Engine {
+	e.secrets = r
 	return e
 }
 
@@ -289,6 +316,7 @@ func (e *Engine) ResolveAuth(ctx context.Context, req model.RequestDef, env *mod
 	case model.AuthAWSSigV4:
 		if a := out.AWSSigV4; a != nil {
 			a.AccessKeyID, a.SecretAccessKey = resolve(a.AccessKeyID), resolve(a.SecretAccessKey)
+			a.Profile = resolve(a.Profile)
 			a.Region, a.Service, a.SessionToken = resolve(a.Region), resolve(a.Service), resolve(a.SessionToken)
 		}
 	case model.AuthOAuth1:
@@ -382,17 +410,19 @@ func (e *Engine) eval(ctx context.Context, expr string, workspaceID model.ID, va
 	if v, ok := vars[expr]; ok {
 		// A variable's value (plain, or OS-keychain-backed — env.Secrets
 		// resolution already happened by the time it reaches here, see
-		// storage.FileStore.GetEnvironment) can ALSO be a 1Password
-		// reference instead of a literal, resolved here (lazily, only for
-		// variables a request ACTUALLY references) so every existing
-		// ${varName} use site (headers, URL, body, params) gets 1Password
-		// support for free, without auth methods needing their own
-		// separate op:// handling. Lazy, not resolved up front alongside
-		// every other variable in the environment, so an unrelated broken
-		// op:// variable elsewhere in the same environment can't break a
-		// request that never references it.
-		if onepassword.IsRef(v) {
-			resolved, err := onepassword.Read(ctx, v)
+		// storage.FileStore.GetEnvironment) can ALSO be a SECRET REFERENCE
+		// instead of a literal — op://vault/item/field, env://.env#KEY, or
+		// any other scheme in the registry (internal/secretref). Resolved
+		// here so every existing ${varName} use site (headers, URL, body,
+		// params, and every auth kind) gets each provider for free, with no
+		// per-provider handling anywhere else.
+		//
+		// LAZY, not resolved up front alongside every other variable in the
+		// environment: one broken reference must not break the requests that
+		// never touch it, and a request should not make the user's 1Password
+		// prompt for a credential it is not going to use.
+		if e.secrets != nil && e.secrets.IsRef(v) {
+			resolved, err := e.secrets.Resolve(ctx, v)
 			if err != nil {
 				return "", fmt.Errorf("variable %q: %w", expr, err)
 			}

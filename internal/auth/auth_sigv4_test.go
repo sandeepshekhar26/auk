@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -245,5 +246,74 @@ func TestAWSCanonicalURI_EncodedSlashSurvives(t *testing.T) {
 		if got := awsCanonicalURI(c.in); got != c.want {
 			t.Errorf("awsCanonicalURI(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// ---- AWS profile / SSO credential bridging ------------------------------
+
+// A profile takes PRECEDENCE over pasted keys. A config carrying both is one
+// someone migrated from static keys to a profile; signing with the stale keys
+// would use credentials they believe they stopped using — and on an SSO
+// account those keys are usually long revoked, producing a 403 that points at
+// the wrong thing entirely.
+func TestProfileWinsOverPastedKeys(t *testing.T) {
+	// No profile: pasted keys are used untouched, with no subprocess at all.
+	plain := model.AWSSigV4Auth{
+		AccessKeyID: "AKIAPASTED", SecretAccessKey: "pasted-secret",
+		Region: "us-east-1", Service: "execute-api",
+	}
+	got, err := resolveAWSCredentials(context.Background(), plain)
+	if err != nil {
+		t.Fatalf("resolveAWSCredentials with no profile: %v", err)
+	}
+	if got.AccessKeyID != "AKIAPASTED" || got.SecretAccessKey != "pasted-secret" {
+		t.Fatalf("pasted keys were altered: %+v", got)
+	}
+
+	// With a profile set, the CLI is consulted — so on a machine without the
+	// AWS CLI the call must FAIL rather than silently falling back to the
+	// stale pasted keys.
+	withProfile := plain
+	withProfile.Profile = "does-not-exist-" + t.Name()
+	got, err = resolveAWSCredentials(context.Background(), withProfile)
+	if err == nil {
+		if got.AccessKeyID == "AKIAPASTED" {
+			t.Fatal("a named profile silently fell back to the pasted access key")
+		}
+		t.Skipf("this machine has an AWS profile named %q; nothing to assert", withProfile.Profile)
+	}
+	if !strings.Contains(err.Error(), withProfile.Profile) && !strings.Contains(err.Error(), "AWS CLI") {
+		t.Errorf("err = %v; it should name the profile or the missing CLI", err)
+	}
+}
+
+// Credentials are cached until shortly before expiry: a 50-request folder run
+// must not spawn the AWS CLI fifty times.
+func TestAWSCredentialsAreCachedUntilExpiry(t *testing.T) {
+	cache := &awsCredCache{m: map[string]awsCachedCred{}}
+
+	live := awsCredentials{
+		AccessKeyID: "AKIALIVE", SecretAccessKey: "s",
+		Expiration: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	}
+	cache.put("p", live)
+	if got, ok := cache.get("p"); !ok || got.AccessKeyID != "AKIALIVE" {
+		t.Fatalf("a live credential was not cached: %+v ok=%v", got, ok)
+	}
+
+	// Inside the skew window it must be treated as already gone, so it cannot
+	// expire between signing and reaching AWS.
+	cache.put("soon", awsCredentials{
+		AccessKeyID: "AKIASOON", SecretAccessKey: "s",
+		Expiration: time.Now().Add(20 * time.Second).UTC().Format(time.RFC3339),
+	})
+	if _, ok := cache.get("soon"); ok {
+		t.Error("a credential expiring inside the skew window was served")
+	}
+
+	// No expiry reported (a static profile) means cache indefinitely.
+	cache.put("static", awsCredentials{AccessKeyID: "AKIASTATIC", SecretAccessKey: "s"})
+	if _, ok := cache.get("static"); !ok {
+		t.Error("a non-expiring credential was dropped from the cache")
 	}
 }

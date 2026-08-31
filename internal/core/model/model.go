@@ -175,6 +175,13 @@ func (o OAuth2Auth) EffectiveGrantType() string {
 // signature, matching the "add to canonical request" path some AWS services
 // require (see internal/auth/auth_sigv4.go).
 type AWSSigV4Auth struct {
+	// Profile names an AWS CLI profile (~/.aws/config). When set, AUK asks the
+	// user's own AWS CLI for credentials at send time rather than using the
+	// pasted key pair below — which is the only way SSO and assumed-role
+	// setups can work at all, since those credentials are temporary and
+	// rotate. A profile takes PRECEDENCE over pasted keys; see
+	// internal/auth/aws_profile.go.
+	Profile         string `yaml:"profile,omitempty" json:"profile,omitempty"`
 	AccessKeyID     string `yaml:"accessKeyId" json:"accessKeyId"`
 	SecretAccessKey string `yaml:"secretAccessKey" json:"secretAccessKey"`
 	Region          string `yaml:"region" json:"region"`

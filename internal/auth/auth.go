@@ -102,7 +102,14 @@ func (a *Applier) Apply(ctx context.Context, cfg model.AuthConfig, req core.Reso
 		if cfg.AWSSigV4 == nil {
 			return req, fmt.Errorf("aws sigv4 auth config missing")
 		}
-		return applyAWSSigV4(*cfg.AWSSigV4, req, time.Now())
+		// A named profile is resolved through the user's AWS CLI here, so the
+		// signer below always receives concrete credentials and stays a pure
+		// function of them.
+		sigCfg, err := resolveAWSCredentials(ctx, *cfg.AWSSigV4)
+		if err != nil {
+			return req, err
+		}
+		return applyAWSSigV4(sigCfg, req, time.Now())
 	case model.AuthOAuth1:
 		if cfg.OAuth1 == nil {
 			return req, fmt.Errorf("oauth1 auth config missing")
