@@ -63,7 +63,7 @@ On top of that, a handful of things most API clients simply don't have at all:
 
 ### Auth
 - Basic, Bearer, API Key, JWT
-- OAuth 2.0 (client-credentials grant) and OAuth 1.0 (HMAC-SHA1, RFC 5849)
+- OAuth 2.0 — client credentials *and* authorization code + PKCE (sign in through your browser; tokens in the macOS keychain, silent refresh) — and OAuth 1.0 (HMAC-SHA1, RFC 5849)
 - AWS Signature v4
 - Client certificates (mTLS), with custom CA and skip-verify in the same form
 - Custom HTTP/HTTPS proxy — independent of TLS and auth, so any combination works together
