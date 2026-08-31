@@ -1,0 +1,47 @@
+# AUK licence-issuing worker.
+#
+# Deploy:
+#   cd worker
+#   npm install
+#   npx wrangler kv namespace create LICENSES        # paste the id below
+#   npx wrangler secret put AUK_LICENSE_PRIVATE_KEY  # the Ed25519 private key
+#   npx wrangler secret put PADDLE_WEBHOOK_SECRET    # from Paddle → Notifications
+#   npx wrangler secret put PADDLE_API_KEY           # from Paddle → Authentication
+#   npx wrangler secret put RESEND_API_KEY           # optional, for email
+#   npx wrangler deploy
+#
+# See README.md in this folder for the full runbook.
+
+name = "auk-license"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# Served under the marketing site's own origin, so the success page can call it
+# with no CORS at all and buyers never see a *.workers.dev URL. A Workers route
+# takes precedence over the Cloudflare Tunnel that serves the rest of the site.
+routes = [{ pattern = "auk.deskmcp.com/api/*", zone_name = "deskmcp.com" }]
+
+[vars]
+SITE_URL = "https://auk.deskmcp.com"
+LICENSE_PLAN = "personal"
+MAX_MACHINES = "3"
+UPDATES_DAYS = "365"
+# The sending domain must be verified with the email provider before this
+# address can send. Change it to a deskmcp.com address once that domain is
+# verified in Resend; until then use the address the site already advertises.
+LICENSE_FROM_EMAIL = "AUK <nancysahu@kriyanative.com>"
+# Comma-separated Paddle price ids for AUK. MUST be set before going live: this
+# Paddle account sells more than one product, and every product's
+# transaction.completed hits this same webhook. Leaving it empty issues an AUK
+# licence for ANY completed purchase on the account.
+AUK_PRICE_IDS = ""
+# Only needed if the worker is ever reached on a different origin than the
+# site (e.g. the *.workers.dev URL during testing).
+ALLOWED_ORIGINS = "https://auk.deskmcp.com"
+
+[[kv_namespaces]]
+binding = "LICENSES"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[observability]
+enabled = true

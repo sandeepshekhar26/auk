@@ -4,14 +4,30 @@
     {
       "name": "frontend-dev",
       "runtimeExecutable": "/bin/bash",
-      "runtimeArgs": ["/Users/skumar/repos/api-tool/frontend/.claude/dev.sh"],
+      "runtimeArgs": [
+        "/Users/skumar/repos/api-tool/frontend/.claude/dev.sh"
+      ],
       "port": 5173
     },
     {
       "name": "wails-dev",
       "runtimeExecutable": "/bin/bash",
-      "runtimeArgs": ["/Users/skumar/repos/api-tool/.claude/wails-dev.sh"],
+      "runtimeArgs": [
+        "/Users/skumar/repos/api-tool/.claude/wails-dev.sh"
+      ],
       "port": 34115
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4321",
+        "--directory",
+        "site"
+      ],
+      "port": 4321
     }
   ]
 }

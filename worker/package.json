@@ -1,0 +1,15 @@
+{
+  "name": "auk-license-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Issues and signs AUK licences from Paddle purchases.",
+  "scripts": {
+    "test": "node --test ./test/*.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

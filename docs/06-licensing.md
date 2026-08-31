@@ -145,30 +145,37 @@ Both are verified (signature **and** machine binding) **before** being stored, s
 
 The stored blob (`storedLicense`) is written to the **keychain (primary)** and a **`~/.auk/.license` file mirror (resilience)** — so a keychain reset doesn't silently drop a paid license; it's read back from the mirror and re-verified, and the keychain self-heals from it (`TestLicenseSurvivesKeychainLossViaFileMirror`). The mirror is *not* a trust root: it's signature-verified on every read like anything else.
 
-### 7.1 The production activation TODO (Merchant of Record)
+### 7.1 The production activation path (Merchant of Record)
 
-`remoteActivator` is a **deliberate stub** — it invents no endpoints. The real flow is **not** "trust the MoR's HTTP response"; it's "get OUR signed license":
+`remoteActivator` calls the **first-party signing worker** in `worker/`. The flow is **not** "trust the MoR's HTTP response"; it is "get OUR signed license":
 
 ```
-app ──key, fingerprint──▶  OUR signing worker  ──validates key──▶  Lemon Squeezy / Paddle
-app ◀── SignedLicense (signed with OUR private key) ── OUR signing worker
+app ──licenseKey, fingerprint──▶  our signing worker  ──validates the purchase──▶  Paddle
+app ◀── SignedLicense (signed with OUR private key) ── our signing worker
 ```
 
-The worker (same signing code as `cmd/mklicense`, minus the manual key file):
+The worker:
 
-1. validates the key with the MoR (valid, not refunded/expired),
-2. enforces the ≤`MaxMachines` seat cap (MoR "instance"/"activation" = one machine),
-3. signs a `License` bound to the caller's `fingerprint` with the **production private key**.
+1. resolved the key at purchase time from Paddle's verified `transaction.completed` webhook (so a key exists **only** because a payment did),
+2. enforces the ≤`MaxMachines` seat cap — re-activating a machine already on the licence is free and consumes no seat,
+3. signs a `License` bound to the caller's `fingerprint` with the **production private key**, which exists nowhere else.
 
-Sketch of the request the app will make to that worker:
+The wire contract:
 
 ```
 POST {baseURL}/v1/licenses/activate
-{ "license_key": "<key>", "instance_name": "<fingerprint>" }
-→ 200  { signed license JSON as produced by license.Sign }
+{ "licenseKey": "AUK-XXXXX-XXXXX-XXXXX-XXXXX", "fingerprint": "<machine id>" }
+→ 200  SignedLicense JSON, exactly as license.Sign produces
+→ 404  unknown_key    409  seat_limit    403  revoked
 ```
 
-`baseURL` points at **our worker**, not directly at the MoR — the private key exists only there. Deactivation should pair with the MoR's "deactivate instance" call to free the seat (AUK's local `Deactivate` only clears local state today). Until this is wired, `Activate` on a plain key returns a clear message telling the user to paste a signed license file instead (`ErrRemoteActivationNotConfigured`).
+`baseURL` defaults to `DefaultActivationBaseURL` (`https://auk.deskmcp.com/api`). The response is **never trusted on its own**: `Manager.storeVerifiedLocked` re-verifies the signature against the compiled-in public key and the machine binding before anything is stored. A hostile endpoint can refuse to activate; it cannot mint a licence AUK accepts.
+
+`Manager.Deactivate` pairs with `POST /v1/licenses/deactivate` to free the seat — **best-effort**: the local removal always succeeds even if the worker is unreachable, because a user wiping a machine or working offline must still be able to move their licence. A stale seat is a support ticket; a deactivation that refuses to run is a customer who is stuck.
+
+Offline activation (pasting a signed licence file) remains supported and is unchanged — it is the fallback if the worker is ever down, and a real feature for air-gapped customers.
+
+**Encoding compatibility.** The worker re-implements §3's canonical scheme in JavaScript (`worker/src/canonical.js`), because Cloudflare Workers cannot run this Go code. That duplication is the single most dangerous seam in the product: a one-byte drift makes every licence sold verify as a forgery. `internal/license/worker_compat_test.go` runs the real JavaScript signer and asserts Go produces a **byte-identical** signature. Never change either encoder without it.
 
 ---
 
@@ -178,27 +185,36 @@ POST {baseURL}/v1/licenses/activate
 
 ---
 
-## 9. Keys: DEV vs PRODUCTION ⚠️
+## 9. Keys: the production signing key
 
-The app verifies against an Ed25519 **public** key compiled into `internal/license/keys.go` (`devPublicKeyBase64`).
+The app verifies against an Ed25519 **public** key compiled into `internal/license/keys.go` (`productionPublicKeyBase64`).
 
-- **This is a DEV/TEST key.** Its private half lives ONLY in the session scratchpad:
-  `…/scratchpad/auk_license_ed25519.key` (base64, 64-byte Ed25519 private key, `chmod 600`). It is **not committed** and must never be.
-- **Before selling:** generate a **fresh** keypair whose private half exists **only** inside the license-issuing worker (§7.1). Replace `devPublicKeyBase64` with the new **public** key, re-mint or delete the test vector in `verify_vector_test.go`, and never let the production private key touch a dev machine, this repo, or CI logs. **Anyone holding the private key can mint licenses this app accepts.**
+- Its **private half exists in exactly one place**: the licence worker's secret store, as `AUK_LICENSE_PRIVATE_KEY` (`worker/README.md` step 2). It has never been committed and never reached a released binary.
+- The **dev key that preceded it is retired.** Its private half sat in a developer home directory, so anyone holding that file could mint licences. No build that reached a customer embedded it. `TestRetiredDevKeyIsNoLongerTrusted` freezes a licence that the old key signed perfectly and asserts this build now rejects it — so a revert to the compromised key fails the test suite rather than shipping quietly.
 
-Generate a fresh keypair:
+### Rotating the key
 
-```go
-pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-// embed base64.StdEncoding.EncodeToString(pub) as devPublicKeyBase64 (rename for prod)
-// store base64.StdEncoding.EncodeToString(priv) ONLY in the signing worker's secret store
+Rotation is a **breaking change for existing customers**: every licence already issued was signed by the old private key and will fail verification against a new one. Do it only with a re-issue plan.
+
+```bash
+go run ./cmd/mkkeypair -out ~/auk-license-key.b64
+# 1. paste the printed PUBLIC key into productionPublicKeyBase64 in keys.go
+# 2. re-mint the frozen vector (§11) with the new private key, before deleting it:
+go run ./cmd/mklicense -email vector@auk.test -name "Vector Test" \
+  -plan personal -days 365 -machine hw-fixturemachine00000000000000 \
+  -key AUK-TEST-VECTOR-0001 -base64 -privkey ~/auk-license-key.b64
+# 3. upload the private key to the worker, then destroy the local copy:
+cd worker && npx wrangler secret put AUK_LICENSE_PRIVATE_KEY
+rm -P ~/auk-license-key.b64
 ```
+
+`cmd/mkkeypair` refuses to overwrite an existing `-out` file, so a stray second run cannot destroy a key that is already live.
 
 ---
 
 ## 10. `cmd/mklicense` — mint test licenses
 
-Reads the dev private key and prints a signed license (the exact thing the mock activator / MoR worker would produce), so licenses can be minted by hand for testing and, later, adapted into the worker.
+Prints a signed license — the exact artefact the worker's activation endpoint produces. Kept for two narrow jobs: minting the frozen test vector, and hand-issuing a licence if the worker is ever down. Both need temporary access to the production private key, so `-privkey` is **required** and no path is assumed.
 
 ```
 go run ./cmd/mklicense -email you@example.com -name "You" [flags]
@@ -212,7 +228,7 @@ go run ./cmd/mklicense -email you@example.com -name "You" [flags]
 | `-days` | `365` | Updates-window length (days from now). |
 | `-machine` | this machine | Fingerprint to bind to. Pass a fixed value to mint for another machine or a test vector. |
 | `-key` | random | Opaque license key to embed. |
-| `-privkey` | scratchpad path | Base64 dev private key file. |
+| `-privkey` | (required) | Path to the base64 Ed25519 private key to sign with. |
 | `-base64` | false | Emit base64(JSON) single-line blob instead of indented JSON. |
 | `-out` | stdout | Write to a file instead. |
 

@@ -37,9 +37,9 @@ Drag the `site/` folder onto <https://app.netlify.com/drop>, then
 
 These are the things most likely to get you rejected. All are small edits.
 
-1. **Business address** — Paddle expects a contact address for the seller.
-   Add it to the Seller clause in `terms.html` (search for `id="seller"`).
-   *This is the single most common rejection cause.*
+1. **Business address** — a contact address for the seller in the Seller
+   clause of `terms.html` (search for `id="seller"`). Not a documented Paddle
+   requirement, but good practice and it reads better to a reviewer.
 2. **Governing law city** — `terms.html` says "the courts of India". Name your
    city (e.g. "the courts of Bengaluru, India").
 3. **"Last updated" date** — three files say `1 January 2026`. Set today's date
@@ -80,45 +80,52 @@ capitalisation difference causes a rejection and a week's delay.
 
 ## Step 4 — Wire the buy button (after approval)
 
-In `site/index.html` there is a commented block right above the buy button
-with the exact snippet. Two edits:
+Two values, one file: `site/paddle-config.js`.
 
-**A.** Add to `<head>` on `index.html`:
-
-```html
-<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
-<script>Paddle.Initialize({ token: "live_xxxxxxxxxxxx" });</script>
+```js
+window.AUK_PADDLE = {
+  environment: "production",
+  clientToken: "live_xxxxxxxxxxxx",   // Paddle → Developer Tools → Authentication
+  priceId: "pri_xxxxxxxxxxxx",        // Paddle → Catalog → Products → AUK
+};
 ```
 
-**B.** Replace the placeholder anchor:
+Both values are **public by design** — the client-side token is meant to be
+readable in page source. Nothing secret goes in this file.
 
-```html
-<a id="buy" href="#" data-todo="paddle-checkout">Buy AUK — $39</a>
-```
-
-with:
-
-```html
-<a id="buy" class="paddle_button" data-items='[{"priceId":"pri_xxxxxxxx"}]'>Buy AUK — $39</a>
-```
+The behaviour lives in `site/checkout.js`: it opens Paddle's overlay checkout
+and sends the buyer to `thanks.html` afterwards. Until both values are filled
+in, the button shows an honest "checkout isn't live yet, email us" note rather
+than doing nothing.
 
 Do **not** delete the legal links directly below the button — Paddle checks for
 them inside the purchase flow.
 
+> The same price id must also go in `AUK_PRICE_IDS` in `worker/wrangler.toml`,
+> or purchases will not be fulfilled. See Step 5.
+
 ---
 
-## Step 5 — Before you take real money
+## Step 5 — Fulfilment (this is what makes the sale real)
 
-The app can verify a licence completely offline, but **nothing emails a licence
-key automatically yet** — `remoteActivator` in `internal/license/activator.go`
-is a documented stub. Until that's wired (Paddle webhook → `cmd/mklicense`
-signing → delivery email), either:
+The licence worker in `worker/` handles it: it verifies Paddle's
+`transaction.completed` webhook, mints a licence key, emails it, and signs a
+machine-bound licence when the app activates. **`worker/README.md` is the
+runbook** — KV namespace, four secrets, the price-id filter, the Paddle
+notification destination, and a sandbox purchase to test end to end.
 
-- soften the pricing-card line that says a key is emailed immediately, **or**
-- issue keys by hand for the first buyers (`go run ./cmd/mklicense -email … -name …`).
+`site/thanks.html` is the buyer's side of it: Paddle redirects there after
+payment and the page shows the licence key on screen, so a sale is fulfilled
+even before the email lands. That is why the pricing card now says the key is
+*shown on screen and emailed*, rather than promising email alone.
 
-Also generate a **fresh production signing keypair** — the current one is a dev
-key. See `docs/06-licensing.md` §9.
+Before the first real sale, confirm all three:
+
+1. `curl https://auk.deskmcp.com/api/health` returns `{"ok":true}`
+2. A sandbox purchase shows a key on `thanks.html`
+3. **That key activates a real AUK build** — this is the one test that proves
+   the whole chain, because the app only accepts a signature made by the
+   worker's private key.
 
 ---
 

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thank you — your AUK licence key</title>
+<meta name="description" content="Your AUK licence key and how to activate it.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0C0F14" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F5F7F9" media="(prefers-color-scheme: light)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Scoped to this page: the licence key is the only thing on it that matters,
+     so it gets the weight of a headline and is selectable as one unit. */
+  .licence-key {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: clamp(1.05rem, 3.4vw, 1.55rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    word-break: break-all;
+    margin: 0;
+  }
+  .key-box {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    justify-content: space-between;
+    margin: 18px 0 6px;
+  }
+  .key-state { min-height: 1.4em; }
+  .steps { padding-left: 1.2em; }
+  .steps li { margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      AUK
+    </a>
+    <nav aria-label="Main">
+      <ul class="nav-links">
+        <li><a href="index.html">Product</a></li>
+        <li><a href="index.html#pricing">Pricing</a></li>
+        <li><a href="terms.html">Terms</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="refund.html">Refunds</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap legal">
+
+  <h1>Thank you — you own AUK</h1>
+  <p class="lede">Your licence key is below. It is also on its way to your email.</p>
+
+  <div class="callout">
+    <div class="key-box">
+      <p class="licence-key" id="licence-key">Fetching your licence key…</p>
+      <button class="btn" id="copy-key" type="button" hidden>Copy</button>
+    </div>
+    <p class="small muted key-state" id="key-state" role="status" aria-live="polite"></p>
+  </div>
+
+  <h2>Activate in three steps</h2>
+  <ol class="steps">
+    <li>Download and open AUK — <a href="https://github.com/sandeepshekhar26/auk/releases/latest">get the latest build</a>.</li>
+    <li>Open <strong>Licence</strong> from the app menu (or press <strong>Activate</strong> on the trial banner).</li>
+    <li>Paste the key above and press <strong>Activate</strong>.</li>
+  </ol>
+
+  <p>
+    Activation is the only time AUK talks to a server. After it succeeds, your licence is
+    verified entirely on your own Mac — offline, forever. Our servers going down cannot stop
+    you working.
+  </p>
+
+  <h2>What you bought</h2>
+  <ul>
+    <li>A <strong>perpetual licence</strong> — the version you have keeps working forever.</li>
+    <li><strong>3 Macs</strong> on this one key. Deactivate from within the app to free a seat.</li>
+    <li><strong>12 months of updates</strong> from today.</li>
+  </ul>
+
+  <p class="small muted">
+    Lost the key? It is in your email, and Paddle's receipt links back to this page. If you
+    are stuck, email <a href="mailto:nancysahu@kriyanative.com">nancysahu@kriyanative.com</a>
+    with your order number and we will re-send it.
+  </p>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <ul class="foot-links">
+      <li><a href="index.html">Product</a></li>
+      <li><a href="index.html#pricing">Pricing</a></li>
+      <li><a href="terms.html">Terms &amp; Conditions</a></li>
+      <li><a href="privacy.html">Privacy Policy</a></li>
+      <li><a href="refund.html">Refund Policy</a></li>
+      <li><a href="mailto:nancysahu@kriyanative.com">Contact</a></li>
+    </ul>
+    <!-- LEGAL-NAME (2 of 2): footer copyright line, repeated verbatim on every page. -->
+    <p>&copy; 2026 Nancy Sahu &middot; AUK is sold via Paddle.com as merchant of record.</p>
+    <p class="small">Support and enquiries: <a href="mailto:nancysahu@kriyanative.com">nancysahu@kriyanative.com</a></p>
+  </div>
+</footer>
+
+<script>
+/*
+ * Shows the buyer their licence key.
+ *
+ * Paddle redirects here with `_ptxn=<transaction id>` after a successful
+ * payment. The key itself is minted by the licence worker from Paddle's
+ * `transaction.completed` webhook, which is a SEPARATE, server-to-server
+ * delivery — so it may land a second or two after the buyer's browser does.
+ * Hence the poll: the page opens optimistic, retries quietly, and only after a
+ * real wait tells the buyer to check their email instead. Whatever happens
+ * here, the purchase is already fulfilled server-side.
+ */
+(function () {
+  "use strict";
+
+  var keyEl = document.getElementById("licence-key");
+  var stateEl = document.getElementById("key-state");
+  var copyBtn = document.getElementById("copy-key");
+
+  var params = new URLSearchParams(window.location.search);
+  // `_ptxn` is Paddle's; `txn` is accepted so a support link can be built by hand.
+  var txn = params.get("_ptxn") || params.get("txn") || "";
+
+  function fail(message) {
+    keyEl.textContent = "Check your email";
+    stateEl.textContent = message;
+    copyBtn.hidden = true;
+  }
+
+  if (!/^txn_[a-z0-9]{10,60}$/i.test(txn)) {
+    fail(
+      "Your payment went through and your key has been emailed to you. This page just " +
+        "couldn't identify the order from its link.",
+    );
+    return;
+  }
+
+  // ~40 seconds of patience, backing off so a slow webhook does not turn into
+  // a request flood.
+  var delays = [700, 900, 1200, 1600, 2000, 2600, 3200, 4000, 5000, 6000, 7000, 8000];
+  var attempt = 0;
+
+  function show(key) {
+    keyEl.textContent = key;
+    stateEl.textContent = "Saved to your email as well. Keep it somewhere safe.";
+    copyBtn.hidden = false;
+    copyBtn.addEventListener("click", function () {
+      navigator.clipboard.writeText(key).then(
+        function () {
+          copyBtn.textContent = "Copied";
+          setTimeout(function () {
+            copyBtn.textContent = "Copy";
+          }, 2000);
+        },
+        function () {
+          // Clipboard access can be denied; the key is selectable regardless.
+          stateEl.textContent = "Select the key above and copy it manually.";
+        },
+      );
+    });
+  }
+
+  function poll() {
+    fetch("/api/v1/licenses/by-transaction?txn=" + encodeURIComponent(txn), {
+      headers: { Accept: "application/json" },
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          return { status: res.status, body: body };
+        });
+      })
+      .then(function (result) {
+        if (result.status === 200 && result.body && result.body.licenseKey) {
+          show(result.body.licenseKey);
+          return;
+        }
+        retry();
+      })
+      .catch(retry);
+  }
+
+  function retry() {
+    if (attempt >= delays.length) {
+      fail(
+        "Your payment succeeded and your licence has been issued — it is taking a moment " +
+          "to appear here. Check your email, or write to us and we will send it straight away.",
+      );
+      return;
+    }
+    stateEl.textContent = "Finalising your licence…";
+    setTimeout(poll, delays[attempt++]);
+  }
+
+  poll();
+})();
+</script>
+
+</body>
+</html>

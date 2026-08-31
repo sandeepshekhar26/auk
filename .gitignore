@@ -18,3 +18,6 @@ build/dist
 # data, not source. (A few such files got committed by accident early on.)
 /workspace/
 /workspaces/
+
+# Worker dependencies (the licence worker has no build step; wrangler is a dev tool)
+worker/node_modules/

@@ -215,13 +215,27 @@ func (m *Manager) storeVerifiedLocked(sl SignedLicense, machineID string, now ti
 }
 
 // Deactivate removes the license from this machine and returns to the trial
-// (which may itself be expired). It clears only LOCAL state; releasing the
-// seat with the Merchant of Record (so the user can activate elsewhere) is the
-// server-side "deactivate instance" call that pairs with remoteActivator —
-// see docs/06-licensing.md. Deactivating with nothing stored is a no-op.
+// (which may itself be expired). Deactivating with nothing stored is a no-op.
+//
+// It also asks the signing worker to release this machine's SEAT, so the
+// licence can be activated on another Mac — but that call is best-effort and
+// its failure is deliberately swallowed. Local removal must always succeed: a
+// user wiping a machine, or deactivating on a plane, cannot be told "no, you
+// are still offline". A seat left stale server-side is a support ticket; a
+// deactivation that refuses to run is a customer who cannot move their licence
+// at all. The stale-seat case is exactly what the deactivate endpoint's
+// idempotence covers — re-running it later clears the seat.
 func (m *Manager) Deactivate() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if stored, ok := m.ls.load(); ok {
+		if releaser, canRelease := m.activator.(seatReleaser); canRelease {
+			ctx, cancel := context.WithTimeout(context.Background(), activationTimeout)
+			_ = releaser.Deactivate(ctx, stored.Signed.License.LicenseKey, stored.Signed.License.MachineID)
+			cancel()
+		}
+	}
 	return m.ls.clear()
 }
 

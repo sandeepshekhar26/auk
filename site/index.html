@@ -16,6 +16,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+<script src="paddle-config.js"></script>
+<script src="checkout.js" defer></script>
 </head>
 <body>
 
@@ -217,37 +220,22 @@
 
         <div class="btn-row">
           <!--
-            PADDLE CHECKOUT GOES HERE.
+            The buy button opens Paddle's overlay checkout. Its two configuration
+            values live in paddle-config.js (client-side token + price id); the
+            behaviour is in checkout.js. Both values are public by design.
 
-            After the Paddle seller account is approved and auk.deskmcp.com is an
-            approved domain, replace the placeholder href/data-todo on the #buy anchor
-            below with a Paddle.js overlay checkout. The usual shape is:
-
-              1. Add the Paddle.js script + initializer to <head> on this page:
-                   <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
-                   <script>
-                     Paddle.Environment.set("production");           // "sandbox" while testing
-                     Paddle.Initialize({ token: "live_xxxxxxxxxxxx" }); // client-side token
-                   </script>
-
-              2. Swap the placeholder attributes on #buy for Paddle's data attributes:
-                   <a id="buy" href="#"
-                      class="paddle_button"
-                      data-items='[{"priceId":"pri_xxxxxxxxxxxx","quantity":1}]'
-                      data-theme="dark">Buy AUK — $39</a>
-
-            Keep the legal links in .buy-legal directly below the button: Paddle's
-            domain review checks that Terms, Privacy and Refund policy are reachable
-            from inside the purchase flow, not just from the site nav.
+            The legal links in .buy-legal directly below must stay where they
+            are: Paddle's domain review checks that Terms, Privacy and Refund
+            are reachable from inside the purchase flow, not just from the nav.
           -->
-          <a id="buy" href="#" data-todo="paddle-checkout">Buy AUK — $39</a>
+          <a id="buy" href="#pricing" data-paddle-buy>Buy AUK — $39</a>
           <a class="btn" href="https://github.com/sandeepshekhar26/auk/releases/latest">Download the 14-day trial</a>
         </div>
 
         <p class="buy-legal">
           By purchasing you agree to our
           <a href="terms.html">Terms &amp; Conditions</a><span class="sep">·</span><a href="privacy.html">Privacy Policy</a><span class="sep">·</span><a href="refund.html">Refund Policy</a><br>
-          <span class="small">Orders are processed by Paddle.com as merchant of record. Your licence key is emailed to you immediately after payment.</span>
+          <span class="small">Orders are processed by Paddle.com as merchant of record. Your licence key is shown on screen the moment payment completes, and emailed to you as well.</span>
         </p>
       </div>
     </div>
