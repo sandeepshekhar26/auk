@@ -34,14 +34,14 @@ LICENSE_FROM_EMAIL = "AUK <nancysahu@kriyanative.com>"
 # Paddle account sells more than one product, and every product's
 # transaction.completed hits this same webhook. Leaving it empty issues an AUK
 # licence for ANY completed purchase on the account.
-AUK_PRICE_IDS = ""
+AUK_PRICE_IDS = "pri_01m1byctm6ybfkq5sst12576xc"
 # Only needed if the worker is ever reached on a different origin than the
 # site (e.g. the *.workers.dev URL during testing).
 ALLOWED_ORIGINS = "https://auk.deskmcp.com"
 
 [[kv_namespaces]]
 binding = "LICENSES"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "98a445cf32674104926d898fb1589687"
 
 [observability]
 enabled = true

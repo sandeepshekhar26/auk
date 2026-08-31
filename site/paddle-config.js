@@ -20,6 +20,6 @@
  */
 window.AUK_PADDLE = {
   environment: "production",
-  clientToken: "",
-  priceId: "",
+  clientToken: "live_7ec36ffc6ed84256ae353930dde",
+  priceId: "pri_01m1byctm6ybfkq5sst12576xc",
 };
