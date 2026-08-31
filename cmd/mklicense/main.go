@@ -21,15 +21,17 @@
 //	          fingerprint, so the minted license activates on this Mac. Pass a
 //	          fixed value to mint for another machine or a test vector.
 //	-key      opaque license key to embed (default: a random test key)
-//	-privkey  path to the base64 dev private key (default: the session
-//	          scratchpad key this build's public key was generated with)
+//	-privkey  (required) path to the base64 Ed25519 private key to sign with
 //	-base64   emit base64(JSON) instead of indented JSON (a single-line blob)
 //	-out      write to this file instead of stdout
 //
-// PRODUCTION NOTE: this same signing step is what the license-issuing worker
-// (behind the Lemon Squeezy / Paddle webhook) will do — but with the
-// PRODUCTION private key, which must never live on a dev machine or in this
-// repo. See docs/06-licensing.md.
+// PRODUCTION NOTE: the licence-signing worker (worker/) performs this exact
+// signing step for real buyers, using the production private key held only in
+// its secret store. This command is kept for two narrow jobs: minting the
+// frozen test vector, and hand-issuing a licence if the worker is ever down.
+// Both require temporary access to that private key, so -privkey is a required
+// flag with no default — there is deliberately no path this tool will reach
+// for on its own. See docs/06-licensing.md.
 package main
 
 import (
@@ -46,11 +48,6 @@ import (
 	"apitool/internal/license"
 )
 
-// defaultDevKeyPath is the session scratchpad file the dev keypair was written
-// to when this build's embedded public key was generated. It is intentionally
-// outside the repo and uncommitted.
-const defaultDevKeyPath = "/private/tmp/claude-501/-Users-skumar-repos-api-tool/02601c84-3093-4579-a380-e66cf23a9f7f/scratchpad/auk_license_ed25519.key"
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "mklicense:", err)
@@ -66,7 +63,7 @@ func run() error {
 		days     = flag.Int("days", 365, "updates-window length in days from now")
 		machine  = flag.String("machine", "", "machine fingerprint to bind to (default: this machine)")
 		key      = flag.String("key", "", "opaque license key to embed (default: random test key)")
-		privPath = flag.String("privkey", defaultDevKeyPath, "path to base64 dev private key")
+		privPath = flag.String("privkey", "", "path to the base64 Ed25519 private key to sign with (required)")
 		asBase64 = flag.Bool("base64", false, "emit base64(JSON) instead of indented JSON")
 		out      = flag.String("out", "", "write to this file instead of stdout")
 	)
@@ -74,6 +71,9 @@ func run() error {
 
 	if strings.TrimSpace(*email) == "" {
 		return fmt.Errorf("-email is required")
+	}
+	if strings.TrimSpace(*privPath) == "" {
+		return fmt.Errorf("-privkey is required (no key path is assumed by default)")
 	}
 
 	priv, err := loadPrivateKey(*privPath)
