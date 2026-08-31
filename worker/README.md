@@ -51,8 +51,23 @@ compiled into the binary.
 
 ## Deploy
 
-Everything below runs from `worker/`. Steps marked **(you)** need an account
-login and cannot be automated.
+```bash
+cd worker && ./deploy.sh
+```
+
+`deploy.sh` does everything that can be automated: installs dependencies,
+logs you in, creates the KV namespace and writes its id into `wrangler.toml`,
+prompts for the price id and the four secrets, deploys, and health-checks the
+result. It is safe to re-run; pass `--rotate-secrets` to replace secrets that
+are already set. It never reads, echoes or stores a secret — each is typed
+straight into `wrangler secret put`.
+
+Three things it cannot do, because they need a browser session on an account:
+the Paddle notification destination, `site/paddle-config.js`, and the sandbox
+purchase. They are listed at the end of its output and in steps 5–6 below.
+
+The manual equivalent follows, if you would rather run it yourself. Everything
+below runs from `worker/`. Steps marked **(you)** need an account login.
 
 ```bash
 npm install

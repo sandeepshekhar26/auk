@@ -116,9 +116,16 @@ them inside the purchase flow.
 
 The licence worker in `worker/` handles it: it verifies Paddle's
 `transaction.completed` webhook, mints a licence key, emails it, and signs a
-machine-bound licence when the app activates. **`worker/README.md` is the
-runbook** — KV namespace, four secrets, the price-id filter, the Paddle
-notification destination, and a sandbox purchase to test end to end.
+machine-bound licence when the app activates.
+
+```bash
+cd worker && ./deploy.sh
+```
+
+That script does the automatable half (KV namespace, secrets, deploy, health
+check). `worker/README.md` is the full runbook, including the Paddle
+notification destination — which must subscribe to `transaction.completed`,
+`adjustment.created` **and `adjustment.updated`**, or refunds never revoke.
 
 `site/thanks.html` is the buyer's side of it: Paddle redirects there after
 payment and the page shows the licence key on screen, so a sale is fulfilled
