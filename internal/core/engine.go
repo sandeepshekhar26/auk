@@ -1313,6 +1313,11 @@ func (e *Engine) ResolveForExecution(ctx context.Context, requestID model.ID, en
 	return e.resolveAndAuthorize(ctx, requestID, environmentID, origin)
 }
 
+// NewResponseLookup exposes the store-backed ResponseLookup so app-layer
+// callers that resolve auth OUTSIDE a send (the OAuth2 sign-in binding) can
+// hand ResolveAuth the same chaining semantics a real send has.
+func NewResponseLookup(s Store) ResponseLookup { return responseLookupFromStore{s} }
+
 type responseLookupFromStore struct{ store Store }
 
 func (r responseLookupFromStore) Lookup(requestID model.ID) (model.ResponseData, bool) {

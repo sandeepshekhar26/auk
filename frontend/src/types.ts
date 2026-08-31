@@ -166,7 +166,15 @@ export interface AuthConfig {
   bearer?: { token: string }
   apikey?: { key: string; value: string; in: 'header' | 'query' }
   jwt?: { secret: string; algorithm: string; claims: string }
-  oauth2?: { clientId: string; clientSecret: string; tokenUrl: string; scopes?: string[] }
+  oauth2?: {
+    grantType?: 'client_credentials' | 'authorization_code'
+    clientId: string
+    clientSecret: string
+    tokenUrl: string
+    authUrl?: string
+    scopes?: string[]
+    audience?: string
+  }
   awsSigV4?: { accessKeyId: string; secretAccessKey: string; region: string; service: string; sessionToken?: string }
   oauth1?: { consumerKey: string; consumerSecret: string; token?: string; tokenSecret?: string }
   digest?: DigestAuth | null

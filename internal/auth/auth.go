@@ -1,8 +1,8 @@
 // Package auth applies credentials to a resolved request. Basic, Bearer,
-// API Key, JWT (HMAC signing), OAuth2 (client-credentials grant only), AWS
-// Signature Version 4, and OAuth 1.0 (HMAC-SHA1) are implemented; NTLM and
-// OAuth2 authorization-code (with a system-browser redirect) are explicitly
-// deferred per docs/01-feature-roadmap.md — NTLM in particular doesn't fit
+// API Key, JWT (HMAC signing), OAuth2 (client-credentials AND
+// authorization-code with PKCE via the system browser — see oauth2_flow.go),
+// AWS Signature Version 4, and OAuth 1.0 (HMAC-SHA1) are implemented; NTLM
+// is explicitly deferred per docs/01-feature-roadmap.md — it doesn't fit
 // this file's "compute once, attach a header" shape at all (it's a
 // challenge-response handshake needing the HTTP execute loop itself to
 // retry on a 401), so it isn't a case waiting to be filled in here the way
@@ -24,9 +24,21 @@ import (
 	"apitool/internal/core/model"
 )
 
-type Applier struct{}
+type Applier struct {
+	// tokens caches OAuth2 access tokens (memory always; keychain persistence
+	// for authorization-code sign-ins when a SecretStore is wired in).
+	tokens *tokenCache
+}
 
-func New() *Applier { return &Applier{} }
+// New builds an Applier with in-memory token caching only. Tests and any
+// context with no OS keychain get correct behavior minus persistence.
+func New() *Applier { return &Applier{tokens: newTokenCache(nil)} }
+
+// NewWithSecretStore builds the production Applier: OAuth2 authorization-code
+// tokens persist to the OS keychain so a sign-in survives an app restart.
+func NewWithSecretStore(store SecretStore) *Applier {
+	return &Applier{tokens: newTokenCache(store)}
+}
 
 // Apply implements core.AuthApplier.
 func (a *Applier) Apply(ctx context.Context, cfg model.AuthConfig, req core.ResolvedRequest) (core.ResolvedRequest, error) {
@@ -80,7 +92,7 @@ func (a *Applier) Apply(ctx context.Context, cfg model.AuthConfig, req core.Reso
 		if cfg.OAuth2 == nil {
 			return req, fmt.Errorf("oauth2 auth config missing")
 		}
-		token, err := fetchOAuth2Token(ctx, *cfg.OAuth2)
+		token, err := a.fetchOAuth2Token(ctx, *cfg.OAuth2)
 		if err != nil {
 			return req, err
 		}

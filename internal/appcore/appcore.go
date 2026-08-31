@@ -45,7 +45,10 @@ func NewEngine(dir string) (*core.Engine, *storage.FileStore, error) {
 		return nil, nil, err
 	}
 
-	engine := core.NewEngine(store, nil, auth.New(), nil)
+	// The Applier gets the same keychain the secret store uses, so an OAuth2
+	// browser sign-in survives an app restart. storage.KeyringSecretStore
+	// satisfies auth.SecretStore structurally — no cross-import needed.
+	engine := core.NewEngine(store, nil, auth.NewWithSecretStore(storage.NewKeyringSecretStore()), nil)
 	engine.Templater = templating.New(engine)
 	engine.Asserter = asserter{}
 	engine.Scripter = scripting.New()

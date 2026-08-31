@@ -1,5 +1,6 @@
-import { Show, createSignal } from 'solid-js'
+import { Show, createEffect, createSignal, on } from 'solid-js'
 import { appState, setAppState } from '../lib/store'
+import { wails } from '../lib/wails'
 import type { AuthKind } from '../types'
 
 const AUTH_KINDS: { value: AuthKind; label: string }[] = [
@@ -13,6 +14,101 @@ const AUTH_KINDS: { value: AuthKind; label: string }[] = [
   { value: 'awsSigV4', label: 'AWS Signature v4' },
   { value: 'oauth1', label: 'OAuth 1.0' },
 ]
+
+/**
+ * The sign-in row for the authorization-code grant: one button that runs the
+ * whole browser flow, and an honest status line beside it.
+ *
+ * Status is looked up from the backend (keychain-backed) rather than kept in
+ * frontend state, so it survives restarts and stays correct when two requests
+ * share the same IdP config. Re-queried whenever the request or the active
+ * environment changes — the config is resolved through templates, so a
+ * different environment can mean a different identity provider entirely.
+ */
+function OAuth2SignInRow(props: { requestId: string }) {
+  type SignInStatus = { signedIn: boolean; expiresAt?: string; hasRefresh: boolean; expired?: boolean }
+  const [status, setStatus] = createSignal<SignInStatus | null>(null)
+  const [busy, setBusy] = createSignal(false)
+  const [error, setError] = createSignal<string | null>(null)
+  const envId = () => appState.activeEnvironmentId ?? ''
+
+  async function refresh() {
+    try {
+      setStatus((await wails.OAuth2Status(props.requestId, envId())) as SignInStatus)
+    } catch {
+      // Incomplete config (no auth URL yet, unresolved template) — nothing to
+      // show; the button itself will surface the real error on click.
+      setStatus(null)
+    }
+  }
+
+  createEffect(on([() => props.requestId, envId], () => void refresh()))
+
+  async function signIn() {
+    setBusy(true)
+    setError(null)
+    try {
+      await wails.OAuth2SignIn(props.requestId, envId())
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function signOut() {
+    try {
+      setStatus((await wails.OAuth2SignOut(props.requestId, envId())) as SignInStatus)
+    } catch {
+      /* status re-query below is the fallback */
+      void refresh()
+    }
+  }
+
+  function expiryLabel(): string {
+    const at = status()?.expiresAt
+    if (!at) return ''
+    const mins = Math.round((new Date(at).getTime() - Date.now()) / 60000)
+    if (mins <= 0) return status()?.hasRefresh ? 'renews on next send' : 'expired'
+    if (mins < 90) return `expires in ${mins}m`
+    return `expires in ${Math.round(mins / 60)}h`
+  }
+
+  return (
+    <div class="mt-1 flex flex-col gap-1.5">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-contrast hover:bg-accent-hover disabled:opacity-60"
+          disabled={busy()}
+          onClick={() => void signIn()}
+        >
+          {busy() ? 'Waiting for browser…' : status()?.signedIn ? 'Sign in again' : 'Sign in with browser'}
+        </button>
+        <Show when={status()?.signedIn}>
+          <span class="flex items-center gap-1.5 text-[11px] text-ink-muted">
+            <span class="h-1.5 w-1.5 rounded-full bg-accent" />
+            Signed in{expiryLabel() ? ` · ${expiryLabel()}` : ''}
+          </span>
+          <button type="button" class="text-[11px] text-ink-muted hover:text-ink-dim hover:underline" onClick={() => void signOut()}>
+            Sign out
+          </button>
+        </Show>
+        <Show when={status()?.expired}>
+          <span class="text-[11px] text-warn">Session expired — sign in again</span>
+        </Show>
+      </div>
+      <Show when={error()}>
+        <p class="max-w-sm break-words text-[11px] text-danger">{error()}</p>
+      </Show>
+      <p class="text-[11px] leading-relaxed text-ink-faint">
+        Opens your default browser — AUK never sees the password. The token is stored in the macOS
+        keychain and refreshed automatically when the provider allows it.
+      </p>
+    </div>
+  )
+}
 
 function Field(props: { label: string; children: any }) {
   return (
@@ -87,7 +183,7 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
     }))
   }
 
-  function setOAuth2(field: 'clientId' | 'clientSecret' | 'tokenUrl', value: string) {
+  function setOAuth2(field: 'clientId' | 'clientSecret' | 'tokenUrl' | 'authUrl' | 'grantType' | 'audience', value: string) {
     setAppState('requests', props.requestIndex, 'authRef', 'oauth2', (prev) => ({
       clientId: prev?.clientId ?? '',
       clientSecret: prev?.clientSecret ?? '',
@@ -252,21 +348,27 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
 
       <Show when={auth().kind === 'oauth2'}>
         <div class="mt-3 flex max-w-sm flex-col gap-2">
-          <Field label="Client ID">
-            <input
+          <Field label="Grant type">
+            <select
               class={inputClass}
-              value={auth().oauth2?.clientId ?? ''}
-              onInput={(e) => setOAuth2('clientId', e.currentTarget.value)}
-            />
+              value={auth().oauth2?.grantType || 'client_credentials'}
+              onChange={(e) => setOAuth2('grantType', e.currentTarget.value)}
+            >
+              <option value="client_credentials">Client credentials (machine to machine)</option>
+              <option value="authorization_code">Authorization code + PKCE (sign in as a user)</option>
+            </select>
           </Field>
-          <Field label="Client Secret">
-            <input
-              type="password"
-              class={inputClass}
-              value={auth().oauth2?.clientSecret ?? ''}
-              onInput={(e) => setOAuth2('clientSecret', e.currentTarget.value)}
-            />
-          </Field>
+
+          <Show when={(auth().oauth2?.grantType || 'client_credentials') === 'authorization_code'}>
+            <Field label="Auth URL">
+              <input
+                class={inputClass}
+                placeholder="https://tenant.auth0.com/authorize"
+                value={auth().oauth2?.authUrl ?? ''}
+                onInput={(e) => setOAuth2('authUrl', e.currentTarget.value)}
+              />
+            </Field>
+          </Show>
           <Field label="Token URL">
             <input
               class={inputClass}
@@ -275,7 +377,53 @@ export default function AuthConfigForm(props: { requestIndex: number }) {
               onInput={(e) => setOAuth2('tokenUrl', e.currentTarget.value)}
             />
           </Field>
-          <p class="text-[11px] text-ink-faint">Client-credentials grant only. Scopes editing coming later.</p>
+          <Field label="Client ID">
+            <input
+              class={inputClass}
+              value={auth().oauth2?.clientId ?? ''}
+              onInput={(e) => setOAuth2('clientId', e.currentTarget.value)}
+            />
+          </Field>
+          <Field
+            label={
+              (auth().oauth2?.grantType || 'client_credentials') === 'authorization_code'
+                ? 'Client Secret (optional for public clients)'
+                : 'Client Secret'
+            }
+          >
+            <input
+              type="password"
+              class={inputClass}
+              value={auth().oauth2?.clientSecret ?? ''}
+              onInput={(e) => setOAuth2('clientSecret', e.currentTarget.value)}
+            />
+          </Field>
+          <Field label="Scopes (space-separated)">
+            <input
+              class={inputClass}
+              placeholder="openid profile offline_access"
+              value={(auth().oauth2?.scopes ?? []).join(' ')}
+              onInput={(e) => {
+                const scopes = e.currentTarget.value.split(/\s+/).filter(Boolean)
+                setAppState('requests', props.requestIndex, 'authRef', 'oauth2', (prev) => ({
+                  ...(prev ?? { clientId: '', clientSecret: '', tokenUrl: '' }),
+                  scopes,
+                }))
+              }}
+            />
+          </Field>
+          <Show when={(auth().oauth2?.grantType || 'client_credentials') === 'authorization_code'}>
+            <Field label="Audience (optional; Auth0 APIs need it)">
+              <input
+                class={inputClass}
+                placeholder="https://api.example.com"
+                value={auth().oauth2?.audience ?? ''}
+                onInput={(e) => setOAuth2('audience', e.currentTarget.value)}
+              />
+            </Field>
+
+            <OAuth2SignInRow requestId={req().id} />
+          </Show>
         </div>
       </Show>
 

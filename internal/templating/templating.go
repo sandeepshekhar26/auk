@@ -284,6 +284,7 @@ func (e *Engine) ResolveAuth(ctx context.Context, req model.RequestDef, env *mod
 	case model.AuthOAuth2:
 		if o := out.OAuth2; o != nil {
 			o.ClientID, o.ClientSecret, o.TokenURL = resolve(o.ClientID), resolve(o.ClientSecret), resolve(o.TokenURL)
+			o.AuthURL, o.Audience = resolve(o.AuthURL), resolve(o.Audience)
 		}
 	case model.AuthAWSSigV4:
 		if a := out.AWSSigV4; a != nil {

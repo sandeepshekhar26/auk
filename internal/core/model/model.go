@@ -128,13 +128,45 @@ type JWTAuth struct {
 	Claims    string `yaml:"claims" json:"claims"`
 }
 
-// OAuth2Auth is the client-credentials grant only; full authorization-code
-// with a system-browser redirect is out of scope (see internal/auth).
+// OAuth2 grant types. The zero value means client-credentials, so every
+// workspace YAML written before GrantType existed keeps meaning exactly what
+// it meant when it was written.
+const (
+	OAuth2GrantClientCredentials = "client_credentials"
+	OAuth2GrantAuthorizationCode = "authorization_code"
+)
+
+// OAuth2Auth configures either the client-credentials grant (machine-to-
+// machine; ClientID+ClientSecret+TokenURL) or the authorization-code grant
+// with PKCE (a person signs in through the system browser; adds AuthURL, and
+// ClientSecret becomes optional because a native app is a public client that
+// cannot keep one — RFC 8252 §8.4).
+//
+// The signed-in token itself is never stored here: this struct is versioned
+// into plain git-tracked YAML, so tokens live in the OS keychain, keyed by a
+// fingerprint of these fields (internal/auth/oauth2_tokens.go).
 type OAuth2Auth struct {
+	GrantType    string   `yaml:"grantType,omitempty" json:"grantType,omitempty"`
 	ClientID     string   `yaml:"clientId" json:"clientId"`
-	ClientSecret string   `yaml:"clientSecret" json:"clientSecret"`
+	ClientSecret string   `yaml:"clientSecret,omitempty" json:"clientSecret,omitempty"`
 	TokenURL     string   `yaml:"tokenUrl" json:"tokenUrl"`
-	Scopes       []string `yaml:"scopes,omitempty" json:"scopes,omitempty"`
+	// AuthURL is the authorization endpoint the browser is sent to
+	// (authorization-code only).
+	AuthURL string   `yaml:"authUrl,omitempty" json:"authUrl,omitempty"`
+	Scopes  []string `yaml:"scopes,omitempty" json:"scopes,omitempty"`
+	// Audience is sent as the `audience` parameter on the authorization
+	// request. Optional; Auth0 requires it to issue an API access token
+	// rather than an opaque userinfo-only token.
+	Audience string `yaml:"audience,omitempty" json:"audience,omitempty"`
+}
+
+// EffectiveGrantType folds the pre-GrantType zero value onto the grant those
+// configs were written for.
+func (o OAuth2Auth) EffectiveGrantType() string {
+	if o.GrantType == "" {
+		return OAuth2GrantClientCredentials
+	}
+	return o.GrantType
 }
 
 // AWSSigV4Auth carries the credentials + scope Signature Version 4 signs
