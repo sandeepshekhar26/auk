@@ -178,7 +178,7 @@ export const IconBraces = makeIcon(() => (
 // never hardcoded hex in JSX.
 // ---------------------------------------------------------------------------
 
-const HTTP_METHOD_COLOR: Record<string, string> = {
+export const HTTP_METHOD_COLOR: Record<string, string> = {
   GET: 'text-method-get',
   POST: 'text-method-post',
   PUT: 'text-method-put',

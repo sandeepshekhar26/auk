@@ -83,6 +83,14 @@ export default function App() {
     })
   })
 
+  // Closing the last tab must clear the response pane. Without this the app
+  // sits on the launch screen with the PREVIOUS request's response still
+  // rendered beside it — which was easy to miss when the launch screen was
+  // empty, and reads as a stale-state bug now that it isn't.
+  createEffect(() => {
+    if (!appState.activeTabId) setResponse(null)
+  })
+
   // Re-load requests/folders/environments whenever the active workspace
   // changes (WorkspaceSwitcher) — appState.requests/folders/environments
   // hold exactly one workspace's data at a time (see lib/data.ts).
@@ -197,13 +205,33 @@ export default function App() {
   })
 
   return (
-    <div class="flex h-screen overflow-hidden">
-      <ActivityRail />
-      {/* In docked mode (the default) Sidebar participates in this flex row
-          as a resizable panel between the rail and the editor; in overlay
-          mode it renders position:fixed and this slot is empty. */}
-      <Sidebar />
-      <div class="relative flex flex-1 flex-col overflow-hidden">
+    /* The window is a GROUND (bg-app) that panels float above, rather than a
+       single flat sheet carved up by 1px dividers. The chrome row sits
+       directly on that ground; everything below it is a panel with its own
+       radius, border and elevation. See the .panel utility in index.css. */
+    <div class="flex h-screen flex-col overflow-hidden">
+      {/* Slim top strip — everything that used to be a row of always-on
+          buttons now lives in the command palette; this only keeps the one
+          thing worth glancing at (environment) plus the trial badge. It lives
+          on the ground, outside the panels, so it reads as window chrome
+          rather than as part of the request pane. */}
+      <div class="flex h-11 shrink-0 items-center justify-between gap-2 px-3.5">
+        <span class="truncate text-[13px] font-semibold tracking-tight text-ink">
+          {appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)?.name ?? ''}
+        </span>
+        <div class="flex items-center gap-2">
+          <TrialBadge onClick={() => setSettingsOpen(true)} />
+          <EnvironmentSelector />
+        </div>
+      </div>
+
+      <div class="flex min-h-0 flex-1 gap-2.5 px-2.5 pb-2.5">
+        <ActivityRail />
+        {/* In docked mode (the default) Sidebar participates in this flex row
+            as a resizable panel between the rail and the editor; in overlay
+            mode it renders position:fixed and this slot is empty. */}
+        <Sidebar />
+        <div class="panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <UpdateBanner />
         <Show when={loadError()}>
           <div class="flex items-center justify-between border-b border-danger-edge bg-danger-bg/60 px-3 py-1 text-xs text-danger">
@@ -213,19 +241,6 @@ export default function App() {
             </button>
           </div>
         </Show>
-
-        {/* Slim top strip — everything that used to be a row of always-on
-            buttons now lives in the command palette; this only keeps the one
-            thing worth glancing at (environment) plus a discoverable ⌘K hint. */}
-        <div class="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-edge px-3">
-          <span class="truncate text-xs font-medium text-ink-dim">
-            {appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)?.name ?? ''}
-          </span>
-          <div class="flex items-center gap-2">
-            <TrialBadge onClick={() => setSettingsOpen(true)} />
-            <EnvironmentSelector />
-          </div>
-        </div>
 
         {/* An MCP tool selected in McpPanel, or a folder run started from
             Sidebar.tsx, each take over this SAME main area (full width —
@@ -240,7 +255,7 @@ export default function App() {
                 <div class="flex-1 overflow-hidden">
                   <RequestEditor onSend={handleSend} isSending={isSending} onCancel={cancelSend} />
                 </div>
-                <div class="w-[45%] overflow-hidden">
+                <div class="w-[45%] overflow-hidden border-l border-edge">
                   <ResponseViewer response={response()} loading={sending()} />
                 </div>
               </div>
@@ -259,6 +274,7 @@ export default function App() {
           </Match>
         </Switch>
 
+        </div>
       </div>
 
       <CommandPalette />

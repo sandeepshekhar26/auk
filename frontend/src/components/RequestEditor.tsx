@@ -1,12 +1,13 @@
 import { Show, Switch, Match, createEffect, createMemo, createSignal, For, on } from 'solid-js'
-import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, setSettingsOpen, activeStreams, pushStreamEvent } from '../lib/store'
+import { appState, setAppState, setCommandPaletteOpen, setStreamConsoleOpen, setSettingsOpen, setImportModalOpen, openExplorer, openTab, activeStreams, pushStreamEvent } from '../lib/store'
 import { licenseStatus } from '../lib/license'
-import { saveRequestDebounced } from '../lib/data'
+import { createRequest, saveRequestDebounced } from '../lib/data'
 import { startStream, stopStream, sendStreamMessage } from '../lib/stream'
 import { wails } from '../lib/wails'
 import type { KeyValue, ProtocolKind } from '../types'
 import KeyValueTable from './KeyValueTable'
 import CopyAsMenu from './CopyAsMenu'
+import { HTTP_METHOD_COLOR, IconSearch } from './icons'
 import BodyEditor from './BodyEditor'
 import GraphQLEditor from './GraphQLEditor'
 import GrpcEditor, { METHOD_HEADER } from './GrpcEditor'
@@ -411,9 +412,14 @@ export default function RequestEditor(props: {
               />
             </div>
           </Show>
-          <div class="flex items-center gap-2 border-b border-edge p-2">
+          {/* The hero row of the whole app, so it is sized like one: 36px
+              controls instead of 26px, and the method carries its own colour
+              rather than being accent-green whatever the verb — the tree has
+              always coloured methods, and the two disagreeing was the tell
+              that this row was an afterthought. */}
+          <div class="flex items-center gap-2 border-b border-edge px-3 py-2.5">
             <select
-              class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge-strong"
+              class="h-9 rounded-lg bg-field px-2 font-mono text-xs font-semibold text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge-strong"
               value={req().protocol || 'http'}
               onChange={(e) => setAppState('requests', activeIndex(), 'protocol', e.currentTarget.value as ProtocolKind)}
               title="Protocol"
@@ -424,7 +430,9 @@ export default function RequestEditor(props: {
             </select>
             <Show when={usesHttpMethod(req().protocol || 'http')}>
               <select
-                class="rounded bg-field px-2 py-1 font-mono text-xs font-semibold text-accent-fg focus:outline-none focus:ring-1 focus:ring-edge-strong"
+                class={`h-9 rounded-lg bg-field px-2 font-mono text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-edge-strong ${
+                  HTTP_METHOD_COLOR[(req().method || 'GET').toUpperCase()] ?? 'text-method-misc'
+                }`}
                 value={req().method}
                 onChange={(e) => setAppState('requests', activeIndex(), 'method', e.currentTarget.value)}
               >
@@ -434,7 +442,7 @@ export default function RequestEditor(props: {
               </select>
             </Show>
             <input
-              class="flex-1 rounded bg-field px-2 py-1 font-mono text-sm text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
+              class="h-9 flex-1 rounded-lg bg-field px-3 font-mono text-sm text-ink focus:outline-none focus:ring-1 focus:ring-edge-strong"
               value={req().url}
               placeholder={URL_PLACEHOLDER[req().protocol || 'http']}
               onInput={(e) => onUrlInput(e.currentTarget.value)}
@@ -445,10 +453,12 @@ export default function RequestEditor(props: {
                 <Show when={!props.isSending?.(req().id)} fallback={<CancelButton onCancel={() => props.onCancel?.(req().id)} />}>
                   <Show when={!sendGated()} fallback={<ActivateToSend />}>
                     <button
-                      class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
+                      class="btn-accent flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold"
                       onClick={() => props.onSend(req().id)}
                     >
                       Send
+                      {/* ⌘Enter already worked and was never advertised here. */}
+                      <span class="font-mono text-[11px] font-normal opacity-70">⌘↵</span>
                     </button>
                   </Show>
                 </Show>
@@ -459,7 +469,7 @@ export default function RequestEditor(props: {
                 fallback={
                   <Show when={!sendGated()} fallback={<ActivateToSend />}>
                     <button
-                      class="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-contrast hover:bg-accent-hover"
+                      class="btn-accent flex h-9 shrink-0 items-center rounded-lg px-4 text-sm font-semibold"
                       onClick={() => connect(req().id)}
                     >
                       Connect
@@ -470,7 +480,7 @@ export default function RequestEditor(props: {
                 {/* Disconnect is never gated — you can always stop an
                     in-flight stream, licence state notwithstanding. */}
                 <button
-                  class="rounded border border-edge-strong bg-field px-3 py-1 text-sm font-medium text-danger hover:bg-raised"
+                  class="flex h-9 shrink-0 items-center rounded-lg border border-edge-strong bg-field px-4 text-sm font-semibold text-danger hover:bg-raised"
                   onClick={() => stopStream(req().id)}
                 >
                   Disconnect
@@ -703,20 +713,141 @@ function ActivateToSend() {
   )
 }
 
-// makes ⌘K the hero rather than a footnote — it's the primary way to get
-// anywhere, not a bolted-on shortcut for people who already found the tree.
-function EmptyState() {
+/** One of the four doors on the launch screen. */
+function StartAction(props: { title: string; sub: string; hint?: string; tint: string; glyph: string; onClick: () => void }) {
   return (
-    <div class="flex h-full flex-col items-center justify-center gap-4 text-ink-faint">
-      <button
-        class="flex items-center gap-1.5 rounded-lg border border-edge-strong bg-field px-4 py-2 hover:bg-raised"
-        onClick={() => setCommandPaletteOpen(true)}
-      >
-        <kbd class="rounded border border-edge-strong bg-raised px-2 py-1 font-mono text-sm text-ink-dim">⌘</kbd>
-        <kbd class="rounded border border-edge-strong bg-raised px-2 py-1 font-mono text-sm text-ink-dim">K</kbd>
-        <span class="ml-2 text-sm text-ink-muted">to jump anywhere</span>
-      </button>
-      <p class="text-xs">or ⌘N for a new request, ⌘B to browse</p>
+    <button
+      class="flex items-start gap-3 rounded-xl border border-edge p-3 text-left transition-colors hover:border-edge-strong hover:bg-raised/50"
+      onClick={props.onClick}
+    >
+      <span class={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] font-mono text-xs font-bold ${props.tint}`}>
+        {props.glyph}
+      </span>
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="flex items-center gap-1.5">
+          <span class="text-[13px] font-semibold tracking-tight text-ink">{props.title}</span>
+          <Show when={props.hint}>
+            <span class="rounded bg-field px-1.5 py-px font-mono text-[10px] text-ink-faint">{props.hint}</span>
+          </Show>
+        </span>
+        <span class="text-xs leading-snug text-ink-muted">{props.sub}</span>
+      </span>
+    </button>
+  )
+}
+
+/**
+ * The launch screen.
+ *
+ * This used to be one ⌘K pill floating in the dead centre of an otherwise
+ * empty pane — around 1300x800 of nothing, which read as an app that had not
+ * finished loading. ⌘K is still the hero, but the space now also answers the
+ * two questions someone actually opens the app with: what was I doing, and
+ * how do I start. Recent runs carry their OUTCOME (status + time), because a
+ * list of names you already know is worth less than a list of what happened.
+ */
+function EmptyState() {
+  const workspaceName = () => appState.workspaces.find((w) => w.id === appState.activeWorkspaceId)?.name ?? 'Workspace'
+  const requestCount = () => appState.requests.length
+  // Newest first, de-duplicated per request: five rows of the same endpoint
+  // re-run five times is not a useful memory of what you were doing.
+  const recent = createMemo(() => {
+    const seen = new Set<string>()
+    const out: typeof appState.history = []
+    for (const h of appState.history) {
+      if (seen.has(h.requestId)) continue
+      seen.add(h.requestId)
+      out.push(h)
+      if (out.length === 5) break
+    }
+    return out
+  })
+
+  return (
+    <div class="flex h-full justify-center overflow-y-auto px-8">
+      <div class="flex w-full max-w-[640px] flex-col pt-16">
+        <h1 class="text-2xl font-bold tracking-tight text-ink">{workspaceName()}</h1>
+        <p class="mt-1 text-sm text-ink-muted">
+          {requestCount() === 0 ? 'No requests yet — start with one of these.' : `${requestCount()} request${requestCount() === 1 ? '' : 's'} in this workspace.`}
+        </p>
+
+        <button
+          class="mt-6 flex h-12 items-center gap-3 rounded-xl border border-edge bg-field px-3.5 text-left hover:bg-raised"
+          onClick={() => setCommandPaletteOpen(true)}
+        >
+          <IconSearch size={17} class="shrink-0 text-ink-faint" />
+          <span class="flex-1 truncate text-sm text-ink-faint">Search, or jump to any request</span>
+          <span class="shrink-0 rounded-md border border-edge bg-surface px-2 py-1 font-mono text-[11px] text-ink-muted">⌘K</span>
+        </button>
+
+        <div class="mt-2.5 grid grid-cols-2 gap-2.5">
+          <StartAction
+            title="New request"
+            hint="⌘N"
+            sub="Start from a URL or a cURL paste"
+            glyph="+"
+            tint="bg-accent/10 text-accent-fg"
+            onClick={() => void createRequest()}
+          />
+          <StartAction
+            title="Import"
+            sub="Postman, OpenAPI, HAR, Insomnia, Bruno"
+            glyph="↓"
+            tint="bg-method-put/10 text-method-put"
+            onClick={() => setImportModalOpen(true)}
+          />
+          <StartAction
+            title="Browse requests"
+            hint="⌘B"
+            sub="Open the collection tree"
+            glyph="≡"
+            tint="bg-method-post/10 text-method-post"
+            onClick={() => openExplorer('requests')}
+          />
+          <StartAction
+            title="Connect an agent"
+            sub="Let Claude Code drive AUK over MCP"
+            glyph="◫"
+            tint="bg-method-patch/10 text-method-patch"
+            onClick={() => openExplorer('mcp')}
+          />
+        </div>
+
+        <Show when={recent().length > 0}>
+          <div class="mt-8 flex items-center gap-3">
+            <span class="text-[10.5px] font-bold uppercase tracking-[0.09em] text-ink-faint">Recent</span>
+            <div class="h-px flex-1 bg-edge" />
+          </div>
+          <div class="mb-8 mt-1.5 flex flex-col">
+            <For each={recent()}>
+              {(h) => (
+                <button
+                  class="flex h-9 items-center gap-3 rounded-lg px-2.5 text-left hover:bg-raised"
+                  onClick={() => openTab(h.requestId)}
+                >
+                  <span
+                    class={`w-9 shrink-0 font-mono text-[10px] font-semibold tracking-wide ${
+                      HTTP_METHOD_COLOR[(h.method || 'GET').toUpperCase()] ?? 'text-method-misc'
+                    }`}
+                  >
+                    {(h.method || 'GET').toUpperCase().slice(0, 4)}
+                  </span>
+                  <span class="shrink-0 truncate text-[13px] text-ink">{h.requestName}</span>
+                  <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-faint">{h.url}</span>
+                  <span
+                    class={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
+                      h.status === 0 || h.status >= 400 ? 'bg-danger/10 text-danger' : 'bg-accent/10 text-accent-fg'
+                    }`}
+                  >
+                    {h.status === 0 ? 'ERR' : h.status}
+                  </span>
+                  <span class="w-16 shrink-0 text-right font-mono text-[11px] tabular-nums text-ink-faint">{h.timingMs} ms</span>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
     </div>
   )
 }

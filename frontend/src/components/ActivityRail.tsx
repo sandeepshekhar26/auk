@@ -45,13 +45,13 @@ export default function ActivityRail() {
     return (
       <Tooltip text={props.label}>
         <div class="relative flex w-12 justify-center py-0.5">
-          <Show when={props.active}>
-            <span class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r bg-accent" />
-          </Show>
+          {/* The active item is a filled accent chip. It replaced a 2px bar
+              hugging the window edge, which was easy to miss and looked like a
+              rendering artefact once the rail lost its own background. */}
           <button
-            class="flex h-9 w-9 items-center justify-center rounded-md"
+            class="flex h-9 w-9 items-center justify-center rounded-[10px] transition-colors"
             classList={{
-              'bg-raised text-ink': props.active,
+              'bg-accent/10 text-accent-fg': props.active,
               'text-ink-muted hover:bg-raised hover:text-ink-dim': !props.active,
             }}
             title={props.label}
@@ -76,7 +76,7 @@ export default function ActivityRail() {
   }
 
   return (
-    <div class="flex h-full w-12 shrink-0 flex-col items-center gap-0.5 border-r border-edge bg-surface py-2">
+    <div class="flex h-full w-12 shrink-0 flex-col items-center gap-0.5 py-1">
       <Tooltip text={workspaceName()}>
         <div
           class="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-xs font-bold text-accent-contrast"
@@ -110,7 +110,7 @@ export default function ActivityRail() {
         <IconCookie size={17} />
       </SectionButton>
 
-      <div class="my-1 h-px w-6 shrink-0 bg-edge" />
+      <div class="my-1.5 h-px w-5 shrink-0 bg-edge" />
 
       <RailButton label="New request (⌘N)" onClick={() => void createRequest()}>
         <IconPlus size={17} />

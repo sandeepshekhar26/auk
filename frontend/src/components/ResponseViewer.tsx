@@ -19,6 +19,36 @@ function assertionLabel(a: Assertion): string {
   return a.value ? `${target} ${a.operator} ${a.value}` : `${target} ${a.operator}`
 }
 
+/**
+ * Response-body size for the status header.
+ *
+ * Deliberately NOT lib/updater.ts's formatBytes: that one is tuned for
+ * download sizes and floors at "1 KB", so a 12-byte error body would read as
+ * 1 KB. Here the small end is the interesting end.
+ */
+function formatBodySize(bytes: number): string {
+  if (!bytes || bytes < 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`
+  const mb = kb / 1024
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+}
+
+/**
+ * One labelled number in the status header. The label is what turns a bare
+ * "248 ms" into something scannable next to the status pill, and tabular
+ * figures stop the row jittering as timings change between sends.
+ */
+function Metric(props: { label: string; value: string }) {
+  return (
+    <div class="flex shrink-0 flex-col gap-px">
+      <span class="text-[9.5px] font-semibold uppercase leading-none tracking-[0.07em] text-ink-faint">{props.label}</span>
+      <span class="font-mono text-xs font-medium leading-none text-ink tabular-nums">{props.value}</span>
+    </div>
+  )
+}
+
 type Tab = 'body' | 'headers' | 'timing'
 type BodyMode = 'pretty' | 'raw'
 
@@ -323,21 +353,30 @@ export default function ResponseViewer(props: { response: ResponseData | null; l
             // (see INTEGRATION NOTES in docs/08-scripting.md), and this
             // renders the moment it lands without another change here.
             const scriptLogs = (): string[] => (res() as { scriptLogs?: string[] | null }).scriptLogs ?? []
+            // One place decides the colour of everything in the status header,
+            // so the dot, the number and the reason phrase can never disagree.
+            // Status 0 is a transport failure ("0 Error") — it used to fall
+            // into the `< 300` branch and render in success green.
+            const tone = () => {
+              const st = res().status
+              if (st === 0 || st >= 400) return { text: 'text-danger', bg: 'bg-danger/10', dot: 'bg-danger' }
+              if (st >= 300) return { text: 'text-warn', bg: 'bg-warn/10', dot: 'bg-warn' }
+              return { text: 'text-accent-fg', bg: 'bg-accent/10', dot: 'bg-accent' }
+            }
             return (
             <div class="flex h-full flex-col">
-              <div class="flex items-center gap-3 border-b border-edge p-2 text-xs">
-                <span
-                  class="font-mono font-semibold"
-                  classList={{
-                    'text-accent-fg': res().status < 300,
-                    'text-warn': res().status >= 300 && res().status < 400,
-                    'text-danger': res().status >= 400,
-                  }}
-                >
-                  {res().status} {res().statusText}
-                </span>
-                <span class="text-ink-muted">{res().timingMs}ms</span>
-                <span class="text-ink-muted">{res().bodySize}B</span>
+              {/* Three separate facts, presented as three. This was one
+                  undifferentiated run-on ("200 200 OK 266ms 509B") in which the
+                  single most important thing on the screen — did it work — had
+                  no more weight than the byte count beside it. */}
+              <div class="flex items-center gap-4 border-b border-edge px-3 py-2 text-xs">
+                <div class={`flex shrink-0 items-center gap-2 rounded-lg py-1 pl-2.5 pr-3 ${tone().bg}`}>
+                  <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${tone().dot}`} />
+                  <span class={`font-mono text-sm font-semibold leading-none tracking-tight ${tone().text}`}>{res().status}</span>
+                  <span class={`whitespace-nowrap text-xs font-medium leading-none ${tone().text}`}>{res().statusText}</span>
+                </div>
+                <Metric label="Time" value={`${res().timingMs} ms`} />
+                <Metric label="Size" value={formatBodySize(res().bodySize)} />
                 {/* Same control as the one next to Send — see CopyAsMenu.
                     It resolves the request from the backend rather than from
                     this response, so the two always agree and neither needs a

@@ -1003,9 +1003,11 @@ export default function Sidebar() {
             re-wrapping on every animation frame (the cheap way to animate a
             layout-participating panel). */}
         <div
-          class="relative h-full shrink-0 overflow-hidden bg-surface"
+          class="relative h-full shrink-0 overflow-hidden"
           classList={{
-            'border-r border-edge': explorerOpen(),
+            // The panel treatment only applies while open: at width 0 a border
+            // and shadow would paint a 1px sliver against the window ground.
+            panel: explorerOpen(),
             'transition-[width] duration-150 ease-out': !resizing(),
           }}
           style={{ width: explorerOpen() ? `${sidebarWidth()}px` : '0px' }}
@@ -1038,7 +1040,7 @@ export default function Sidebar() {
             thesis for what is really just a navigation aid). */}
         <div class="fixed inset-0 z-30" onClick={() => setExplorerOpen(false)} />
         <div
-          class="fixed bottom-0 left-12 top-0 z-40 flex flex-col border-r border-edge bg-surface shadow-2xl"
+          class="fixed bottom-1 left-12 top-1 z-40 flex flex-col rounded-xl border border-edge bg-surface shadow-2xl"
           style={{ width: `${sidebarWidth()}px` }}
         >
           <SidebarBody />

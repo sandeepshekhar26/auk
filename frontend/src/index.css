@@ -14,16 +14,16 @@
   color-scheme: dark;
 
   /* surfaces, lowest to highest */
-  --color-app: 10 10 10; /* window background */
-  --color-surface: 18 18 20; /* sidebar, panels */
+  --color-app: 8 9 11; /* window ground — panels sit on this */
+  --color-surface: 18 19 22; /* sidebar, panels: lifted off the ground */
   --color-field: 23 23 23; /* inputs, selects, modal bodies */
   --color-raised: 38 38 38; /* hover states, chips */
   --color-elevated: 64 64 64; /* active chips, pressed */
 
   /* borders */
-  --color-edge: 38 38 38;
-  --color-edge-strong: 64 64 64;
-  --color-edge-soft: 23 23 23;
+  --color-edge: 36 38 43;
+  --color-edge-strong: 64 66 72;
+  --color-edge-soft: 26 28 32;
 
   /* text, highest to lowest emphasis */
   --color-ink: 245 245 245;
@@ -60,25 +60,42 @@
   --color-proto-gql: 244 114 182; /* pink */
   --color-proto-sse: 251 146 60; /* orange */
   --color-proto-grpc: 45 212 191; /* teal */
+
+  /* Panel elevation. See the .panel utility below. */
+  --shadow-panel: 0 0 0 0 rgb(0 0 0 / 0);
+  --radius-panel: 12px;
 }
 
 [data-theme='light'] {
   color-scheme: light;
 
-  --color-app: 255 255 255;
-  --color-surface: 250 250 250;
-  --color-field: 245 245 245;
-  --color-raised: 229 229 229;
-  --color-elevated: 212 212 212;
+  /* The light theme used to be pure white -> #FAFAFA -> #F5F5F5 with #E5E5E5
+     hairlines: every surface within 2% lightness of every other, so nothing
+     separated one region from the next except a 1px line, and the whole app
+     read as unfinished. It also INVERTED the semantic the dark theme uses —
+     `app` was the LIGHTEST surface there and the darkest here, so any
+     component written against the dark ramp was wrong in light.
 
-  --color-edge: 229 229 229;
-  --color-edge-strong: 212 212 212;
-  --color-edge-soft: 245 245 245;
+     Now both themes agree: `app` is the window ground and every panel sits
+     ABOVE it. In light that means a faintly cool tinted ground with white
+     panels lifted off it (see the .panel utility below), which is what gives
+     the layout depth instead of hairlines. */
+  --color-app: 232 235 239; /* tinted window ground — panels sit on this */
+  --color-surface: 255 255 255; /* panels: white, lifted off the ground */
+  --color-field: 241 243 246; /* inputs, inset within a panel */
+  --color-raised: 233 236 240;
+  --color-elevated: 219 223 229;
 
-  --color-ink: 23 23 23;
-  --color-ink-dim: 64 64 64;
-  --color-ink-muted: 115 115 115;
-  --color-ink-faint: 163 163 163;
+  --color-edge: 221 225 231;
+  --color-edge-strong: 196 202 211;
+  --color-edge-soft: 233 236 240;
+
+  /* Slightly cooled and spread further apart, so the four emphasis levels are
+     actually distinguishable rather than four shades of the same grey. */
+  --color-ink: 18 21 26;
+  --color-ink-dim: 73 80 96;
+  --color-ink-muted: 122 130 144;
+  --color-ink-faint: 168 174 185;
 
   --color-accent: 5 150 105;
   --color-accent-hover: 4 120 87;
@@ -103,6 +120,8 @@
   --color-proto-gql: 190 24 93;
   --color-proto-sse: 194 65 12;
   --color-proto-grpc: 15 118 110;
+
+  --shadow-panel: 0 1px 2px rgb(16 20 28 / 0.04), 0 10px 28px -14px rgb(16 20 28 / 0.16);
 }
 
 html,
@@ -114,4 +133,28 @@ body,
 
 body {
   @apply bg-app text-ink antialiased font-sans;
+}
+
+@layer components {
+  /* A panel is a region that floats above the window ground: the sidebar, the
+     request pane, the response pane. This one class is what replaced the old
+     hairline-divider layout, so keep the three properties together — a panel
+     with a radius but no shadow, or a shadow but no border, reads as a mistake
+     rather than as depth. */
+  .panel {
+    @apply border border-edge bg-surface;
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-panel);
+  }
+
+  /* The one primary action on screen (Send / Connect). The shadow is derived
+     from --color-accent rather than a literal, so changing the accent — or a
+     future community theme — re-tints the glow with it instead of leaving a
+     green halo under a blue button. */
+  .btn-accent {
+    @apply bg-accent text-accent-contrast hover:bg-accent-hover;
+    box-shadow:
+      0 1px 2px rgb(var(--color-accent) / 0.3),
+      0 6px 16px -6px rgb(var(--color-accent) / 0.45);
+  }
 }
