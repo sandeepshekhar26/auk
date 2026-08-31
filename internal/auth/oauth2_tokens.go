@@ -89,10 +89,32 @@ type tokenCache struct {
 	mu    sync.Mutex
 	mem   map[string]*oauth2.Token
 	store SecretStore // nil = no persistence (tests, CLI without keychain)
+	// flight holds one mutex per fingerprint, serializing mint/refresh for
+	// that sign-in. Without it, two concurrent sends sharing an expired token
+	// both replay the same refresh token — and an IdP with rotation + reuse
+	// detection (Auth0's default for native apps) treats the second replay as
+	// theft and revokes the whole grant family. One network round-trip per
+	// expiry, however many sends are in flight, is also just cheaper.
+	flight map[string]*sync.Mutex
 }
 
 func newTokenCache(store SecretStore) *tokenCache {
-	return &tokenCache{mem: map[string]*oauth2.Token{}, store: store}
+	return &tokenCache{mem: map[string]*oauth2.Token{}, store: store, flight: map[string]*sync.Mutex{}}
+}
+
+// lockKey serializes token minting/refreshing for one fingerprint. Callers
+// MUST re-read the cache after acquiring: the goroutine that held the lock
+// first has usually already done the work.
+func (c *tokenCache) lockKey(key string) (unlock func()) {
+	c.mu.Lock()
+	m, ok := c.flight[key]
+	if !ok {
+		m = &sync.Mutex{}
+		c.flight[key] = m
+	}
+	c.mu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 // get returns the cached token for key, consulting the keychain on a memory

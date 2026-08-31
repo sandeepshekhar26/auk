@@ -555,6 +555,9 @@ func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, en
 	// runner (ResolveForExecution), and Copy-as-code (ResolveForSnippet).
 	resolved.URL = applyPathParams(req.Protocol, resolved.URL, resolved.PathParams)
 
+	// authMintedSecrets collects credential values the auth Applier mints so
+	// the pre-request script snapshot can redact them (see below).
+	var authMintedSecrets map[string]string
 	if req.Auth != nil && req.Auth.Kind != model.AuthNone {
 		// Template the auth credential fields (a COPY — never the stored
 		// pointer) so `${token}` in the Auth tab resolves like anywhere else.
@@ -575,9 +578,42 @@ func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, en
 		// mutate, the *AuthConfig the store handed us (relevant on the
 		// fallback path above, where authCfg IS the stored pointer).
 		resolved.Auth = cloneAuthConfig(authCfg)
+		// Snapshot header values BEFORE Apply: anything Apply adds is a minted
+		// credential (an OAuth access token, a signed JWT, a SigV4 signature,
+		// base64(user:password)) and must join the script-redaction secret set
+		// below. secretValues(env) alone misses these — an OAuth token exists
+		// in no environment variable, and Basic's base64 form leaks a keychain
+		// password even when the raw password itself is redacted. This is the
+		// same "a guard shipped for one channel has a second door" shape the
+		// vars.get redaction went through; close both doors at once.
+		preAuthValues := make(map[string]bool, len(resolved.Headers))
+		for _, h := range resolved.Headers {
+			preAuthValues[h.Value] = true
+		}
 		resolved, err = e.Auth.Apply(ctx, *authCfg, resolved)
 		if err != nil {
 			return model.RequestDef{}, ResolvedRequest{}, fmt.Errorf("apply auth: %w", err)
+		}
+		for _, h := range resolved.Headers {
+			if h.Value == "" || preAuthValues[h.Value] {
+				continue
+			}
+			if authMintedSecrets == nil {
+				authMintedSecrets = map[string]string{}
+			}
+			label := "auth:" + string(req.Auth.Kind)
+			// Register the credential AFTER the scheme prefix ("Bearer x",
+			// "Basic x", "AWS4-HMAC-SHA256 …") so a script still sees which
+			// scheme a header carries — and, when the credential is a resolved
+			// env secret, so the env map's variable-name entry wins the value
+			// collision and the placeholder reads [secret:apiKey] rather than
+			// the anonymous [secret:auth:bearer]. Values without a scheme
+			// prefix (X-Amz-Security-Token, minted API keys) register whole.
+			if _, bare, ok := strings.Cut(h.Value, " "); ok && bare != "" {
+				authMintedSecrets[bare] = label
+			} else {
+				authMintedSecrets[h.Value] = label
+			}
 		}
 	}
 
@@ -596,7 +632,7 @@ func (e *Engine) resolveAndAuthorize(ctx context.Context, requestID model.ID, en
 		// unredacted request, restoring every field the script left exactly as
 		// the snapshot had it. ctx.setHeader keeps working normally — a header
 		// the script sets wins; one it never touched keeps its real value.
-		snapshot := redactResolved(resolved, secretValues(env))
+		snapshot := redactResolved(resolved, mergeSecretMaps(secretValues(env), authMintedSecrets))
 		// baseline is snapshot's twin, and the one the merge compares against.
 		// It must be a SEPARATE copy: internal/scripting rewrites an existing
 		// header's value IN PLACE on the slice it is handed, so comparing
@@ -858,6 +894,30 @@ func containsSecretValue(s string, secrets map[string]string) bool {
 // secretValuesLongestFirst orders the values deterministically: longest first
 // (see redactSecretValues), ties broken lexicographically so the result never
 // depends on Go's map iteration order.
+// mergeSecretMaps unions two value->name maps without mutating either. Nil in,
+// possibly nil out — redactResolved treats an empty map as "nothing to do".
+//
+// On a value collision `a` wins: it carries the environment's VARIABLE NAMES,
+// and `[secret:apiKey]` tells a script author which value went missing where
+// `[secret:auth:bearer]` only says that something did. (The collision is real:
+// a Bearer token that IS `${apiKey}` appears in both maps.)
+func mergeSecretMaps(a, b map[string]string) map[string]string {
+	if len(b) == 0 {
+		return a
+	}
+	if len(a) == 0 {
+		return b
+	}
+	out := make(map[string]string, len(a)+len(b))
+	for v, n := range b {
+		out[v] = n
+	}
+	for v, n := range a {
+		out[v] = n
+	}
+	return out
+}
+
 func secretValuesLongestFirst(secrets map[string]string) []string {
 	values := make([]string, 0, len(secrets))
 	for value := range secrets {

@@ -38,18 +38,20 @@ type fakeIdP struct {
 	code string
 
 	// knobs
-	issueRefresh   bool
-	rotateRefresh  bool
-	refuseRefresh  bool
-	accessLifetime time.Duration
+	issueRefresh       bool
+	rotateRefresh      bool
+	refuseRefresh      bool
+	refreshUnavailable bool // 503 temporarily_unavailable — a transient outage
+	accessLifetime     time.Duration
 
 	refreshCalls int
+	usedRefresh  map[string]bool
 
 	srv *httptest.Server
 }
 
 func newFakeIdP(t *testing.T) *fakeIdP {
-	f := &fakeIdP{t: t, code: "code-" + t.Name(), issueRefresh: true, accessLifetime: time.Hour}
+	f := &fakeIdP{t: t, code: "code-" + t.Name(), issueRefresh: true, accessLifetime: time.Hour, usedRefresh: map[string]bool{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/authorize", f.authorize)
 	mux.HandleFunc("/token", f.token)
@@ -101,6 +103,22 @@ func (f *fakeIdP) token(w http.ResponseWriter, r *http.Request) {
 
 	switch form.Get("grant_type") {
 	case "authorization_code":
+		// A real IdP refuses an exchange whose redirect_uri or client_id does
+		// not match the authorization request (RFC 6749 §4.1.3). Enforcing it
+		// here keeps the client honest about sending both.
+		f.mu.Lock()
+		front := f.redirectURI
+		f.mu.Unlock()
+		if form.Get("redirect_uri") != front {
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"invalid_grant","error_description":"redirect_uri mismatch"}`)
+			return
+		}
+		if form.Get("client_id") != "auk-test-client" {
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"invalid_client"}`)
+			return
+		}
 		if form.Get("code") != f.code {
 			w.WriteHeader(400)
 			fmt.Fprint(w, `{"error":"invalid_grant"}`)
@@ -134,10 +152,31 @@ func (f *fakeIdP) token(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, `{"error":"invalid_grant","error_description":"revoked"}`)
 			return
 		}
-		if got := form.Get("refresh_token"); !strings.HasPrefix(got, "refresh-") {
+		if f.refreshUnavailable {
+			w.WriteHeader(503)
+			fmt.Fprint(w, `{"error":"temporarily_unavailable"}`)
+			return
+		}
+		got := form.Get("refresh_token")
+		if !strings.HasPrefix(got, "refresh-") {
 			w.WriteHeader(400)
 			fmt.Fprint(w, `{"error":"invalid_grant"}`)
 			return
+		}
+		// Rotation semantics: each refresh token works ONCE. This is what
+		// makes persisting the stale token (instead of the rotated one) a
+		// test failure rather than a silent pass — reuse is how Auth0-style
+		// detection reads theft.
+		if f.rotateRefresh {
+			f.mu.Lock()
+			reused := f.usedRefresh[got]
+			f.usedRefresh[got] = true
+			f.mu.Unlock()
+			if reused {
+				w.WriteHeader(400)
+				fmt.Fprint(w, `{"error":"invalid_grant","error_description":"refresh token reuse detected"}`)
+				return
+			}
 		}
 		resp := map[string]any{
 			"access_token": fmt.Sprintf("access-refreshed-%d", n),
@@ -268,6 +307,10 @@ func TestCallbackPageReflectsNothing(t *testing.T) {
 	idp := newFakeIdP(t)
 	ap := New()
 	payload := `"><script>alert(1)</script>`
+	// The SUCCESS page renders after a state-valid callback whose `code` is
+	// whatever the IdP redirected with — so make the legitimate code itself
+	// hostile. If any part of the query were echoed, this is where it shows.
+	idp.code = payload
 
 	browser := func(authURL string) error {
 		go func() {
@@ -427,10 +470,13 @@ func TestFingerprintSeparatesWhatWasAuthorized(t *testing.T) {
 		t.Fatal("identical configs produced different fingerprints")
 	}
 	for name, mutate := range map[string]func(*model.OAuth2Auth){
-		"clientID": func(o *model.OAuth2Auth) { o.ClientID = "other" },
-		"scopes":   func(o *model.OAuth2Auth) { o.Scopes = []string{"read", "write"} },
-		"tokenURL": func(o *model.OAuth2Auth) { o.TokenURL = "https://t2" },
-		"audience": func(o *model.OAuth2Auth) { o.Audience = "https://api" },
+		"clientID":     func(o *model.OAuth2Auth) { o.ClientID = "other" },
+		"scopes":       func(o *model.OAuth2Auth) { o.Scopes = []string{"read", "write"} },
+		"tokenURL":     func(o *model.OAuth2Auth) { o.TokenURL = "https://t2" },
+		"authURL":      func(o *model.OAuth2Auth) { o.AuthURL = "https://a2" },
+		"clientSecret": func(o *model.OAuth2Auth) { o.ClientSecret = "rotated" },
+		"grantType":    func(o *model.OAuth2Auth) { o.GrantType = model.OAuth2GrantClientCredentials },
+		"audience":     func(o *model.OAuth2Auth) { o.Audience = "https://api" },
 	} {
 		m := base
 		mutate(&m)
@@ -504,4 +550,118 @@ func (f *fakeSecretStore) Delete(service, account string) error {
 	defer f.mu.Unlock()
 	delete(f.m, service+"/"+account)
 	return nil
+}
+
+// ── regression tests for the adversarial-review findings ──
+
+// A transient failure (IdP 5xx, offline, DNS) must NOT destroy the stored
+// sign-in. The original code dropped the token on ANY refresh error, so one
+// send on a plane threw away a credential that cost a human sign-in.
+func TestTransientRefreshFailureKeepsTheSignIn(t *testing.T) {
+	idp := newFakeIdP(t)
+	ap := New()
+	if _, err := ap.SignInAuthorizationCode(context.Background(), idp.cfg(), browserFollow(t)); err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+	key := oauth2Fingerprint(idp.cfg())
+	tok := ap.tokens.get(key)
+	tok.Expiry = time.Now().Add(-time.Minute)
+	ap.tokens.put(key, tok, false)
+
+	// The IdP has a bad day.
+	idp.refreshUnavailable = true
+	_, err := ap.Apply(context.Background(), model.AuthConfig{Kind: model.AuthOAuth2, OAuth2: ptr(idp.cfg())}, reqIn())
+	if err == nil || !strings.Contains(err.Error(), "try again") {
+		t.Fatalf("err = %v, want a retryable message", err)
+	}
+	if st := ap.SignInStatus(idp.cfg()); !st.SignedIn {
+		t.Fatal("a transient outage destroyed the stored sign-in")
+	}
+
+	// The IdP recovers; the SAME stored refresh token must still work. The
+	// exact ordinal is not asserted — x/oauth2 probes both client-auth styles
+	// on a failure, so the counter's value during the outage is a library
+	// detail, not part of this test's claim.
+	idp.refreshUnavailable = false
+	req, err := ap.Apply(context.Background(), model.AuthConfig{Kind: model.AuthOAuth2, OAuth2: ptr(idp.cfg())}, reqIn())
+	if err != nil {
+		t.Fatalf("apply after recovery: %v", err)
+	}
+	assertBearerPrefix(t, req, "access-refreshed-")
+}
+
+func assertBearerPrefix(t *testing.T, req core.ResolvedRequest, prefix string) {
+	t.Helper()
+	for _, h := range req.Headers {
+		if h.Key == "Authorization" && strings.HasPrefix(h.Value, "Bearer "+prefix) {
+			return
+		}
+	}
+	t.Fatalf("no Authorization: Bearer %s… header in %+v", prefix, req.Headers)
+}
+
+// Concurrent sends sharing one expired sign-in must produce exactly ONE
+// refresh round-trip. Without single-flighting, every send replayed the same
+// refresh token — which an IdP with rotation + reuse detection (Auth0's
+// native-app default) reads as theft, revoking the grant family, and the
+// losers' error paths then deleted the winner's fresh token locally too.
+func TestConcurrentSendsRefreshExactlyOnce(t *testing.T) {
+	idp := newFakeIdP(t)
+	idp.rotateRefresh = true // reuse now fails hard, like Auth0
+	ap := New()
+	if _, err := ap.SignInAuthorizationCode(context.Background(), idp.cfg(), browserFollow(t)); err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+	key := oauth2Fingerprint(idp.cfg())
+	tok := ap.tokens.get(key)
+	tok.Expiry = time.Now().Add(-time.Minute)
+	ap.tokens.put(key, tok, false)
+
+	const sends = 8
+	var wg sync.WaitGroup
+	errs := make([]error, sends)
+	for i := 0; i < sends; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = ap.Apply(context.Background(), model.AuthConfig{Kind: model.AuthOAuth2, OAuth2: ptr(idp.cfg())}, reqIn())
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("send %d failed: %v", i, err)
+		}
+	}
+	if idp.refreshCalls != 1 {
+		t.Fatalf("refreshCalls = %d for %d concurrent sends, want exactly 1", idp.refreshCalls, sends)
+	}
+	if st := ap.SignInStatus(idp.cfg()); !st.SignedIn {
+		t.Fatal("the sign-in did not survive concurrent refresh")
+	}
+}
+
+// A token inside our 30s skew but outside x/oauth2's own 10s delta must be
+// REFRESHED, not served: handing the seed to TokenSource unmodified made the
+// library return it as still-valid, hollowing out the skew guarantee.
+func TestNearExpiryTokenIsActuallyRefreshed(t *testing.T) {
+	idp := newFakeIdP(t)
+	ap := New()
+	if _, err := ap.SignInAuthorizationCode(context.Background(), idp.cfg(), browserFollow(t)); err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+	key := oauth2Fingerprint(idp.cfg())
+	tok := ap.tokens.get(key)
+	tok.Expiry = time.Now().Add(20 * time.Second) // dead to us, alive to x/oauth2
+	ap.tokens.put(key, tok, false)
+
+	req, err := ap.Apply(context.Background(), model.AuthConfig{Kind: model.AuthOAuth2, OAuth2: ptr(idp.cfg())}, reqIn())
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if idp.refreshCalls != 1 {
+		t.Fatalf("refreshCalls = %d, want 1 — the near-expiry token was served unrefreshed", idp.refreshCalls)
+	}
+	assertBearer(t, req, "access-refreshed-1")
 }

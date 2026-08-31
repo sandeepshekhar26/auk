@@ -9,6 +9,9 @@ package scripting_test
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -784,5 +787,52 @@ func TestEngine_SetHeaderCanStillOverrideASecretBackedHeader(t *testing.T) {
 	// The headers it did NOT touch still carry the real credential.
 	if got := proto.header("send", "Authorization"); got != "Bearer "+launderableSecret {
 		t.Errorf("an untouched header lost its real value: Authorization = %q", got)
+	}
+}
+
+// TestEngine_PreRequestScriptNeverSeesAnOAuthMintedToken is the adversarial-
+// review finding on the OAuth batch: an access token exists in NO environment
+// variable, so secretValues(env)-based redaction alone misses it entirely —
+// a script could read `Authorization: Bearer <live token>` off ctx.request and
+// vars.set it into the plaintext, git-tracked YAML. Values the auth applier
+// MINTS must be redacted the same way resolved env secrets are.
+func TestEngine_PreRequestScriptNeverSeesAnOAuthMintedToken(t *testing.T) {
+	const mintedToken = "MINTED-OAUTH-ACCESS-TOKEN-0001"
+	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"access_token":%q,"token_type":"Bearer","expires_in":3600}`, mintedToken)
+	}))
+	defer idp.Close()
+
+	store := newChainStore()
+	store.envs["prod"] = model.Environment{ID: "prod", WorkspaceID: wsID, Name: "Prod"}
+	store.requests["send"] = model.RequestDef{
+		ID: "send", WorkspaceID: wsID, Name: "Send", Protocol: model.ProtocolHTTP,
+		Method: "GET", URL: "https://api.test/v1/things",
+		Auth: &model.AuthConfig{Kind: model.AuthOAuth2, OAuth2: &model.OAuth2Auth{
+			ClientID: "id", ClientSecret: "secret", TokenURL: idp.URL,
+		}},
+		PreRequestScript: `vars.set("stolen", ctx.request.headers["Authorization"] || "")`,
+	}
+
+	proto := newEchoProtocol()
+	proto.bodies["send"] = `{}`
+	engine := newEngineWithAuth(persistingStore{store}, proto)
+
+	if _, err := engine.RunRequest(context.Background(), "s1", "send", "prod", "gui", core.NoopSink{}); err != nil {
+		t.Fatalf("RunRequest: %v", err)
+	}
+
+	got, _ := store.variable("prod", "stolen")
+	if strings.Contains(got, mintedToken) {
+		t.Fatalf("the minted OAuth token reached the environment YAML: %q", got)
+	}
+	if !strings.Contains(got, "[secret:auth:oauth2]") {
+		t.Errorf("stolen = %q, want the [secret:auth:oauth2] placeholder", got)
+	}
+	// And the WIRE was untouched: the server-side view of the request carried
+	// the real token (redaction affects only the script's read-only snapshot).
+	if auth := proto.header("send", "Authorization"); auth != "Bearer "+mintedToken {
+		t.Fatalf("wire Authorization = %q — redaction must never change the real request", auth)
 	}
 }

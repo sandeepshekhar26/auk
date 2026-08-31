@@ -61,6 +61,15 @@ func (a *Applier) clientCredentialsToken(ctx context.Context, cfg model.OAuth2Au
 		return tok.AccessToken, nil
 	}
 
+	// Serialize minting per fingerprint: a 50-request folder run must produce
+	// ONE token round-trip, not a stampede. Re-check after acquiring — the
+	// goroutine that got here first has usually already stocked the cache.
+	unlock := a.tokens.lockKey(key)
+	defer unlock()
+	if tok := a.tokens.get(key); tokenUsable(tok) {
+		return tok.AccessToken, nil
+	}
+
 	conf := clientcredentials.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
@@ -93,6 +102,25 @@ func (a *Applier) authCodeToken(ctx context.Context, cfg model.OAuth2Auth) (stri
 	if tokenUsable(tok) {
 		return tok.AccessToken, nil
 	}
+
+	// Refresh is SINGLE-FLIGHTED per fingerprint. Concurrent sends sharing an
+	// expired sign-in (a GUI send during a folder or MCP run — explicitly
+	// supported) must not each replay the same refresh token: under rotation
+	// with reuse detection (Auth0's native-app default) the second replay
+	// reads as theft and revokes the whole grant family server-side.
+	unlock := a.tokens.lockKey(key)
+	defer unlock()
+
+	// Re-read under the lock: whoever held it before us usually refreshed
+	// already — or dropped a revoked token, in which case honest answer is
+	// "sign in", not a second doomed refresh.
+	tok = a.tokens.get(key)
+	if tok == nil {
+		return "", ErrOAuth2NotSignedIn
+	}
+	if tokenUsable(tok) {
+		return tok.AccessToken, nil
+	}
 	if tok.RefreshToken == "" {
 		// Expired, and the IdP gave us nothing to renew with (no
 		// offline_access/refresh scope). Only a human can fix this.
@@ -100,16 +128,27 @@ func (a *Applier) authCodeToken(ctx context.Context, cfg model.OAuth2Auth) (stri
 		return "", fmt.Errorf("oauth2: session expired and the provider issued no refresh token — sign in again from the Auth tab")
 	}
 
-	// Silent refresh. TokenSource(seed) sees the seed is expired, uses its
-	// RefreshToken against conf.Endpoint.TokenURL, and returns the new token.
+	// Silent refresh. The seed's AccessToken is BLANKED first: x/oauth2's
+	// TokenSource applies its own 10-second validity delta, so a token that
+	// our 30-second skew already rejected would otherwise be handed straight
+	// back unrefreshed — and could then expire on the wire, which is the
+	// exact race the skew exists to prevent.
+	seed := *tok
+	seed.AccessToken = ""
 	conf := oauth2AppConfig(cfg, "")
-	fresh, err := conf.TokenSource(ctx, tok).Token()
+	fresh, err := conf.TokenSource(ctx, &seed).Token()
 	if err != nil {
-		// A refused refresh usually means the grant was revoked server-side.
-		// Drop the dead token so the UI flips back to "Sign in" instead of
-		// failing the same way forever.
-		a.tokens.drop(key)
-		return "", fmt.Errorf("oauth2: token refresh was refused (%v) — sign in again from the Auth tab", err)
+		// The stored sign-in is destroyed ONLY on the provider's authoritative
+		// refusal. A dial timeout, DNS failure, offline machine, proxy hiccup
+		// or IdP 5xx must NOT delete a credential that cost a human sign-in —
+		// dropping on any error meant one send on a plane threw the refresh
+		// token away. The asymmetry is deliberate: a stale token that lingers
+		// is a retry nuisance; a destroyed one is unrecoverable.
+		if refreshRefused(err) {
+			a.tokens.drop(key)
+			return "", fmt.Errorf("oauth2: the provider revoked this sign-in — sign in again from the Auth tab (%v)", err)
+		}
+		return "", fmt.Errorf("oauth2: token refresh failed — check your connection and try again (%v)", err)
 	}
 	// Some IdPs rotate the refresh token on every use and some omit it from
 	// the refresh response; carry the old one forward so a single refresh
@@ -119,6 +158,23 @@ func (a *Applier) authCodeToken(ctx context.Context, cfg model.OAuth2Auth) (stri
 	}
 	a.tokens.put(key, fresh, true)
 	return fresh.AccessToken, nil
+}
+
+// refreshRefused reports whether a refresh error is the PROVIDER SAYING NO —
+// the only verdict that justifies destroying the stored sign-in. RFC 6749 §5.2
+// names the codes that mean the grant itself is dead. Anything else (transport
+// failures, 5xx, temporarily_unavailable, unparseable proxy pages) is treated
+// as retryable and keeps the token.
+func refreshRefused(err error) bool {
+	var re *oauth2.RetrieveError
+	if !errors.As(err, &re) {
+		return false // never reached the token endpoint
+	}
+	switch re.ErrorCode {
+	case "invalid_grant", "invalid_client", "unauthorized_client", "access_denied":
+		return true
+	}
+	return false
 }
 
 // oauth2AppConfig builds the x/oauth2 config for cfg. redirectURL is set only
