@@ -43,13 +43,44 @@ fi
 # ---------------------------------------------------------------------------
 bold "Cloudflare account"
 # ---------------------------------------------------------------------------
-# `whoami` is the cheapest auth probe; it fails when no OAuth token or
-# CLOUDFLARE_API_TOKEN is present.
-if ! $WRANGLER whoami >/dev/null 2>&1; then
+# `wrangler whoami` EXITS 0 EVEN WHEN UNAUTHENTICATED — it reports the fact on
+# stdout and calls that a successful run. Testing its exit code (the obvious
+# thing) silently skips login and the failure surfaces several steps later as
+# "In a non-interactive environment, it's necessary to set a
+# CLOUDFLARE_API_TOKEN", which points at the wrong problem entirely. So parse
+# the output, not the status.
+# Output is CAPTURED before being matched, never piped into `grep -q`: under
+# `set -o pipefail` a short-circuiting grep can SIGPIPE the producer, failing
+# the pipeline on a MATCH — which here would invert the answer and report an
+# unauthenticated account as logged in. scripts/release.sh hit this same trap.
+authenticated() {
+  local out
+  out="$($WRANGLER whoami 2>&1 || true)"
+  case "$out" in
+    *"not authenticated"* | *"Not authenticated"*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+  info "using CLOUDFLARE_API_TOKEN from the environment"
+elif authenticated; then
+  info "already logged in"
+else
   warn "Not logged in. A browser window will open for you to authorise wrangler."
+  warn "Approve it there, then come back here."
+  # Deliberately unredirected: wrangler only offers the browser OAuth flow when
+  # it can see a real terminal on stdout. Capturing this makes it decide the
+  # environment is non-interactive and demand an API token instead.
   $WRANGLER login || die "login failed"
+  authenticated || die "still not authenticated after login.
+       If the browser flow will not complete, create an API token at
+       https://developers.cloudflare.com/fundamentals/api/get-started/create-token/
+       (template: Edit Cloudflare Workers) and re-run as:
+         CLOUDFLARE_API_TOKEN=... ./deploy.sh"
 fi
-$WRANGLER whoami | sed 's/^/    /' || true
+
+$WRANGLER whoami 2>&1 | sed 's/^/    /' || true
 
 # ---------------------------------------------------------------------------
 bold "KV namespace"
@@ -112,7 +143,9 @@ EXISTING="$($WRANGLER secret list 2>/dev/null || echo '[]')"
 # put_secret <NAME> <where it comes from> <required|optional>
 put_secret() {
   local name="$1" source="$2" need="$3"
-  if [ "$ROTATE" -eq 0 ] && printf '%s' "$EXISTING" | grep -q "\"$name\""; then
+  # Same capture-then-match rule as `authenticated` above — a piped `grep -q`
+  # here would misreport an already-set secret as unset, and re-prompt for it.
+  if [ "$ROTATE" -eq 0 ] && case "$EXISTING" in *"\"$name\""*) true ;; *) false ;; esac; then
     info "$name — already set (use --rotate-secrets to replace)"
     return 0
   fi
