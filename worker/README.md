@@ -73,7 +73,7 @@ Copy the printed `id` into `wrangler.toml` in place of
 npx wrangler secret put AUK_LICENSE_PRIVATE_KEY   # contents of the key file
 npx wrangler secret put PADDLE_WEBHOOK_SECRET     # Paddle → Notifications → your destination
 npx wrangler secret put PADDLE_API_KEY            # Paddle → Developer Tools → Authentication
-npx wrangler secret put RESEND_API_KEY            # optional; email delivery
+npx wrangler secret put RESEND_API_KEY            # email delivery (see note)
 ```
 
 | Secret | Required? | What breaks without it |
@@ -81,7 +81,7 @@ npx wrangler secret put RESEND_API_KEY            # optional; email delivery
 | `AUK_LICENSE_PRIVATE_KEY` | **yes** | Activation fails. Nothing can be signed. |
 | `PADDLE_WEBHOOK_SECRET` | **yes** | Every webhook is rejected, and licence keys cannot be derived. |
 | `PADDLE_API_KEY` | strongly | The buyer's email is unknown, so nothing can be emailed. The key still exists and the success page still shows it. |
-| `RESEND_API_KEY` | optional | No email. The success page is the only delivery. |
+| `RESEND_API_KEY` | **before launch** | No email. The success page still delivers the key, but `site/index.html` promises the buyer an email — either set this or change that sentence. |
 
 Delete the private-key file from disk once it is uploaded:
 
@@ -116,7 +116,13 @@ of the customer's browser.
 Paddle → Developer Tools → Notifications → **New destination**
 
 - URL: `https://auk.deskmcp.com/api/paddle/webhook`
-- Events: `transaction.completed`, `adjustment.created`
+- Events: `transaction.completed`, `adjustment.created`, **`adjustment.updated`**
+
+> `adjustment.updated` is not optional. Paddle reviews seller-initiated
+> refunds, so the adjustment is *created* as `pending_approval` and only
+> becomes `approved` in a later `adjustment.updated`. Subscribe to `created`
+> alone and refunds never revoke — the buyer gets their money back and keeps a
+> licence that still activates.
 
 Copy the signing secret it shows you into `PADDLE_WEBHOOK_SECRET` (step 2).
 
@@ -182,7 +188,8 @@ either encoder without running it.**
 - **Revocation is not retroactive.** A refunded licence cannot be activated
   again, but a copy already installed keeps working, because AUK verifies
   offline by design and has no kill switch. The 14-day refund window bounds the
-  exposure to one machine. `site/refund.html` says exactly this.
+  exposure to the machines already activated. `site/refund.html` says exactly
+  this. Revocation depends on the `adjustment.updated` subscription above.
 - **Email is best-effort.** A failure is logged, never propagated: a non-2xx
   would make Paddle retry and make the merchant think the sale failed. The key
   is durable in KV before any email is attempted, and the success page can

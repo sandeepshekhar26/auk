@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // newSigningServer stands in for the licence-signing worker: it signs whatever
@@ -292,5 +294,91 @@ func TestDeactivateReleasesTheSeatServerSide(t *testing.T) {
 	}
 	if len(released) != 1 || released[0].LicenseKey != "AUK-SEAT-TEST" || released[0].Fingerprint == "" {
 		t.Fatalf("worker saw releases %+v, want one naming this machine", released)
+	}
+}
+
+// A redirect must never carry the licence key to another host. Go's default
+// client re-sends the body on 307/308, so without CheckRedirect a hijacked DNS
+// entry or a captive portal could harvest keys from every activation.
+func TestRemoteActivatorRefusesToFollowRedirects(t *testing.T) {
+	var sawKeyAt []string
+	var mu sync.Mutex
+	record := func(name string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			if strings.Contains(string(body), "AUK-SECRET-KEY") {
+				mu.Lock()
+				sawKeyAt = append(sawKeyAt, name)
+				mu.Unlock()
+			}
+			w.WriteHeader(http.StatusOK)
+		}
+	}
+	attacker := httptest.NewServer(record("attacker"))
+	defer attacker.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/licenses/activate", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "AUK-SECRET-KEY") {
+			mu.Lock()
+			sawKeyAt = append(sawKeyAt, "origin")
+			mu.Unlock()
+		}
+		// 308 preserves the method and body on redirect — the dangerous one.
+		http.Redirect(w, r, attacker.URL+"/v1/licenses/activate", http.StatusPermanentRedirect)
+	})
+	origin := httptest.NewServer(mux)
+	defer origin.Close()
+
+	_, err := remoteActivator{baseURL: origin.URL}.Activate(context.Background(), "AUK-SECRET-KEY", "hw-1")
+	if err == nil {
+		t.Fatal("expected the redirect to fail activation, not be followed")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, where := range sawKeyAt {
+		if where == "attacker" {
+			t.Fatal("SECURITY: the licence key was sent to the redirect target")
+		}
+	}
+}
+
+// A hostile endpoint must not be able to render arbitrary text — or a faked
+// multi-line dialog — inside the app by way of an error message.
+func TestServerMessagesAreBoundedBeforeDisplay(t *testing.T) {
+	long := strings.Repeat("A", 5000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(activationError{
+			Code:    "revoked",
+			Message: "line one\n\nAUK SECURITY ALERT: enter your password below\n" + long,
+		})
+	}))
+	defer srv.Close()
+
+	_, err := remoteActivator{baseURL: srv.URL}.Activate(context.Background(), "AUK-K", "hw-1")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	msg := err.Error()
+	if len(msg) > maxServerMessageBytes+8 {
+		t.Fatalf("message is %d bytes, want it bounded to ~%d", len(msg), maxServerMessageBytes)
+	}
+	if strings.ContainsAny(msg, "\n\r") {
+		t.Fatalf("message still contains control characters: %q", msg)
+	}
+}
+
+func TestSanitizeServerMessage(t *testing.T) {
+	if got := sanitizeServerMessage("   "); got != "" {
+		t.Fatalf("blank message = %q, want empty so the caller uses its own wording", got)
+	}
+	if got := sanitizeServerMessage("all good"); got != "all good" {
+		t.Fatalf("ordinary message was altered: %q", got)
+	}
+	// Multi-byte characters must not be cut in half by the length bound.
+	if got := sanitizeServerMessage(strings.Repeat("é", 400)); !utf8.ValidString(got) {
+		t.Fatalf("truncation produced invalid UTF-8: %q", got)
 	}
 }

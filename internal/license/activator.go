@@ -144,7 +144,17 @@ func (a remoteActivator) client() *http.Client {
 	if a.httpClient != nil {
 		return a.httpClient
 	}
-	return &http.Client{Timeout: activationTimeout}
+	return &http.Client{
+		Timeout: activationTimeout,
+		// Never follow a redirect. Go's default client re-sends the request
+		// body on a 307/308 — which would mean posting the customer's licence
+		// key to whatever host the redirect named. A hijacked DNS entry or a
+		// captive portal could harvest keys that way. The signing worker never
+		// redirects, so refusing costs nothing and closes the hole.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 // Activate posts the key and this machine's fingerprint and returns the signed
@@ -178,8 +188,10 @@ func (a remoteActivator) Activate(ctx context.Context, key, fingerprint string) 
 
 	resp, err := a.client().Do(req)
 	if err != nil {
-		// The transport error is wrapped rather than shown: it names hosts and
-		// TLS internals that mean nothing to a customer mid-purchase.
+		// The sentence a customer reads comes first; the transport detail is
+		// appended in parentheses because it is what makes a support email
+		// actionable ("no such host" vs "certificate expired"). Callers that
+		// want only the friendly half match on ErrRemoteActivationUnreachable.
 		return SignedLicense{}, fmt.Errorf("%w (%v)", ErrRemoteActivationUnreachable, err)
 	}
 	defer resp.Body.Close()
@@ -208,11 +220,17 @@ func (a remoteActivator) Activate(ctx context.Context, key, fingerprint string) 
 // The worker already writes customer-facing messages, so those are preferred.
 // The fallbacks exist for the cases the worker never reaches: a proxy, a
 // captive portal, or a Cloudflare error page standing in for it.
+// maxServerMessageBytes bounds how much server-supplied text AUK will render
+// as its own error. The worker's messages are one sentence; anything longer is
+// a hostile or broken endpoint trying to put arbitrary text in front of the
+// user inside a native app window.
+const maxServerMessageBytes = 300
+
 func activationFailure(status int, payload []byte) error {
 	var apiErr activationError
 	_ = json.Unmarshal(payload, &apiErr)
-	if apiErr.Message != "" {
-		return errors.New(apiErr.Message)
+	if msg := sanitizeServerMessage(apiErr.Message); msg != "" {
+		return errors.New(msg)
 	}
 	switch {
 	case status == http.StatusNotFound:
@@ -271,4 +289,25 @@ func (a remoteActivator) Deactivate(ctx context.Context, key, fingerprint string
 // one-method implementation.
 type seatReleaser interface {
 	Deactivate(ctx context.Context, key, fingerprint string) error
+}
+
+// sanitizeServerMessage prepares server-supplied text for display: control
+// characters (which could fake a multi-line dialog) become spaces, and the
+// result is truncated. An empty result tells the caller to use its own wording.
+func sanitizeServerMessage(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return ""
+	}
+	msg = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, msg)
+	if len(msg) > maxServerMessageBytes {
+		// Truncate on a rune boundary so the message never ends mid-character.
+		msg = strings.ToValidUTF8(msg[:maxServerMessageBytes], "") + "…"
+	}
+	return strings.TrimSpace(msg)
 }

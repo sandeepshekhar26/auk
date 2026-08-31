@@ -226,17 +226,24 @@ func (m *Manager) storeVerifiedLocked(sl SignedLicense, machineID string, now ti
 // at all. The stale-seat case is exactly what the deactivate endpoint's
 // idempotence covers — re-running it later clears the seat.
 func (m *Manager) Deactivate() error {
+	// The local removal happens under the lock; the network call deliberately
+	// does NOT. Every other method on this Manager takes the same mutex —
+	// including Status, which the UI polls — so holding it across a call that
+	// can take the full activation timeout would freeze the whole licensing
+	// surface for twenty seconds on a bad connection, for a call whose result
+	// is discarded anyway.
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	stored, hadLicense := m.ls.load()
+	releaser, canRelease := m.activator.(seatReleaser)
+	err := m.ls.clear()
+	m.mu.Unlock()
 
-	if stored, ok := m.ls.load(); ok {
-		if releaser, canRelease := m.activator.(seatReleaser); canRelease {
-			ctx, cancel := context.WithTimeout(context.Background(), activationTimeout)
-			_ = releaser.Deactivate(ctx, stored.Signed.License.LicenseKey, stored.Signed.License.MachineID)
-			cancel()
-		}
+	if hadLicense && canRelease {
+		ctx, cancel := context.WithTimeout(context.Background(), activationTimeout)
+		defer cancel()
+		_ = releaser.Deactivate(ctx, stored.Signed.License.LicenseKey, stored.Signed.License.MachineID)
 	}
-	return m.ls.clear()
+	return err
 }
 
 // StartTrialIfNeeded records the trial start on first ever call and is a

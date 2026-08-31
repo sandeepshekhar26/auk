@@ -164,7 +164,13 @@ async function handleWebhook(request, env, ctx) {
   switch (event?.event_type) {
     case "transaction.completed":
       return await handlePurchase(event, env, ctx);
+    // BOTH adjustment events, deliberately. Paddle creates a seller-initiated
+    // refund in `pending_approval` and delivers the transition to `approved`
+    // as adjustment.UPDATED. Handling only `created` means the revoke branch
+    // never runs for the ordinary refund path — the licence stays fully
+    // activatable after the buyer has their money back.
     case "adjustment.created":
+    case "adjustment.updated":
       return await handleAdjustment(event, env);
     default:
       // A 2xx for events we do not act on: anything else makes Paddle retry
@@ -261,11 +267,23 @@ async function handlePurchase(event, env, ctx) {
  * full refund revokes the licence so it can no longer be activated on a new
  * machine.
  *
+ * ── Why this handles TWO events ─────────────────────────────────────────────
+ * A refund does not arrive approved. Paddle, as merchant of record, reviews
+ * seller-initiated refunds: the adjustment is CREATED with status
+ * `pending_approval`, and the transition to `approved` arrives later as
+ * `adjustment.updated`. Subscribing to `adjustment.created` alone — and then
+ * ignoring anything not yet approved, as this function must — means the
+ * revoke branch never executes for the ordinary refund, and a refunded buyer
+ * keeps a licence that still activates on new Macs indefinitely. Some
+ * adjustments (credits, and chargebacks depending on how they land) DO arrive
+ * already approved on `created`, which is why both events route here and the
+ * decision is made on STATUS, not on which event carried it.
+ *
  * Deliberately NOT retroactive: a licence already signed and installed keeps
  * working, because AUK verifies offline forever by design and has no
  * revocation channel. Revocation stops FUTURE activations. That is the honest
  * limit of an offline-first licence, and the 14-day refund window is short
- * enough that the exposure is one machine.
+ * enough that the exposure is the machines already activated.
  *
  * @param {any} event
  * @param {any} env
@@ -275,6 +293,9 @@ async function handleAdjustment(event, env) {
   if (adj?.action !== "refund" && adj?.action !== "chargeback") {
     return json({ ok: true, ignored: `adjustment ${adj?.action}` });
   }
+  // An absent status is treated as approved: every real Paddle payload carries
+  // one, so a missing status means an unexpected shape — and for a refund,
+  // failing CLOSED (revoke) is the right side to err on.
   if (adj?.status && adj.status !== "approved") {
     return json({ ok: true, ignored: `adjustment status ${adj.status}` });
   }

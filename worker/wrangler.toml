@@ -7,7 +7,7 @@
 #   npx wrangler secret put AUK_LICENSE_PRIVATE_KEY  # the Ed25519 private key
 #   npx wrangler secret put PADDLE_WEBHOOK_SECRET    # from Paddle → Notifications
 #   npx wrangler secret put PADDLE_API_KEY           # from Paddle → Authentication
-#   npx wrangler secret put RESEND_API_KEY           # optional, for email
+#   npx wrangler secret put RESEND_API_KEY           # email delivery of the key
 #   npx wrangler deploy
 #
 # See README.md in this folder for the full runbook.

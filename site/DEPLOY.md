@@ -31,6 +31,12 @@ Pick ONE host. Cloudflare Pages is the easiest and free.
 Drag the `site/` folder onto <https://app.netlify.com/drop>, then
 **Domain settings → Add custom domain → `auk.deskmcp.com`**.
 
+> **If you host anywhere but Cloudflare**, `thanks.html` breaks: it fetches
+> `/api/v1/licenses/by-transaction` on its own origin, which resolves only
+> because a Cloudflare Workers route puts the licence worker in front of
+> `auk.deskmcp.com/api/*`. On another host, point that fetch at the worker's
+> full URL and add that origin to `ALLOWED_ORIGINS` in `worker/wrangler.toml`.
+
 ---
 
 ## Step 2 — Fill in the three blanks BEFORE applying to Paddle

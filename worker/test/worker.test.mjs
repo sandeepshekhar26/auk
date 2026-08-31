@@ -259,25 +259,69 @@ test("an unknown key cannot be activated", async () => {
   assert.equal(res.status, 404);
 });
 
-test("a refund revokes the licence for future activations", async () => {
+// The refund flow as Paddle actually delivers it, in two events. A refund is
+// CREATED pending Paddle's approval and only becomes approved later, via
+// adjustment.UPDATED. An earlier version of this test hand-built a single
+// already-approved adjustment.created — a payload Paddle does not send for
+// this flow — and so passed while the revoke branch was unreachable in
+// production: refunded buyers kept licences that still activated.
+test("a refund revokes the licence, across Paddle's two-event approval", async () => {
   const { env } = await makeEnv();
   await postWebhook(env, purchaseEvent());
   const licenseKey = await deriveLicenseKey(WEBHOOK_SECRET, "txn_01hqzx8j3k4m5n6p7q8r9s0t1u");
   assert.equal((await activate(env, licenseKey, "hw-a")).status, 200);
 
-  const refund = JSON.stringify({
-    event_type: "adjustment.created",
-    data: {
-      action: "refund",
-      status: "approved",
-      transaction_id: "txn_01hqzx8j3k4m5n6p7q8r9s0t1u",
-    },
-  });
-  assert.equal((await postWebhook(env, refund)).status, 200);
+  const adjustment = (eventType, status) =>
+    JSON.stringify({
+      event_type: eventType,
+      data: { action: "refund", status, transaction_id: "txn_01hqzx8j3k4m5n6p7q8r9s0t1u" },
+    });
 
-  const res = await activate(env, licenseKey, "hw-b");
+  // 1. Created, awaiting Paddle's review. Must NOT revoke yet — the refund may
+  //    still be rejected, and revoking early would strip a paying customer.
+  const created = await postWebhook(env, adjustment("adjustment.created", "pending_approval"));
+  assert.equal(created.status, 200);
+  assert.match((await created.json()).ignored, /pending_approval/);
+  assert.equal((await activate(env, licenseKey, "hw-b")).status, 200, "must still work while pending");
+
+  // 2. Approved. THIS is the event that must revoke.
+  const approved = await postWebhook(env, adjustment("adjustment.updated", "approved"));
+  assert.equal(approved.status, 200);
+  assert.equal((await approved.json()).revoked, true);
+
+  const res = await activate(env, licenseKey, "hw-c");
   assert.equal(res.status, 403);
   assert.equal((await res.json()).error, "revoked");
+});
+
+// Chargebacks and credits can arrive already approved on `created`; that path
+// must keep working now that both events route to the same handler.
+test("an already-approved adjustment revokes on created", async () => {
+  const { env } = await makeEnv();
+  await postWebhook(env, purchaseEvent());
+  const licenseKey = await deriveLicenseKey(WEBHOOK_SECRET, "txn_01hqzx8j3k4m5n6p7q8r9s0t1u");
+
+  const chargeback = JSON.stringify({
+    event_type: "adjustment.created",
+    data: { action: "chargeback", status: "approved", transaction_id: "txn_01hqzx8j3k4m5n6p7q8r9s0t1u" },
+  });
+  assert.equal((await postWebhook(env, chargeback)).status, 200);
+  assert.equal((await activate(env, licenseKey, "hw-a")).status, 403);
+});
+
+// A rejected refund must leave the licence alone — the customer paid and kept
+// the product.
+test("a rejected refund does not revoke", async () => {
+  const { env } = await makeEnv();
+  await postWebhook(env, purchaseEvent());
+  const licenseKey = await deriveLicenseKey(WEBHOOK_SECRET, "txn_01hqzx8j3k4m5n6p7q8r9s0t1u");
+
+  const rejected = JSON.stringify({
+    event_type: "adjustment.updated",
+    data: { action: "refund", status: "rejected", transaction_id: "txn_01hqzx8j3k4m5n6p7q8r9s0t1u" },
+  });
+  assert.equal((await postWebhook(env, rejected)).status, 200);
+  assert.equal((await activate(env, licenseKey, "hw-a")).status, 200);
 });
 
 test("an unpaid transaction id returns pending, not an error", async () => {

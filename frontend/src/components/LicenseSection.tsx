@@ -2,10 +2,12 @@ import { Show, Switch, Match, createSignal, onMount } from 'solid-js'
 import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
 import { licenseStatus, activate, deactivate, refreshLicense } from '../lib/license'
 
-// TODO(licensing): replace with the real Merchant-of-Record checkout URL
-// (Lemon Squeezy / Paddle) once chosen. This is a clearly-marked placeholder —
-// it does not resolve to a real store.
-const CHECKOUT_URL = 'https://checkout.auk.app/buy-TODO'
+// The pricing section of the real site, which opens Paddle's overlay checkout.
+// Deliberately the PAGE and not a direct Paddle link: the page is the single
+// place the current price lives, so a launch discount or a price change never
+// leaves this constant quoting a stale number, and the buyer still sees the
+// terms/privacy/refund links Paddle requires inside the purchase flow.
+const CHECKOUT_URL = 'https://auk.deskmcp.com/#pricing'
 
 // LicenseSection renders the licensing UI inside Settings. It shows the current
 // status (trial days left / licensed to whom + seat count / trial ended /
@@ -180,7 +182,7 @@ export default function LicenseSection() {
               onClick={openCheckout}
               class="rounded px-2 py-1.5 text-xs font-medium text-accent-fg hover:underline"
             >
-              Buy AUK — $49 →
+              Buy AUK →
             </button>
           </div>
         </form>

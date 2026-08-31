@@ -59,7 +59,7 @@
 <main class="wrap legal">
 
   <h1>Thank you — you own AUK</h1>
-  <p class="lede">Your licence key is below. It is also on its way to your email.</p>
+  <p class="lede">Your licence key is below. Copy it now &mdash; a receipt is also on its way from Paddle.</p>
 
   <div class="callout">
     <div class="key-box">
@@ -77,9 +77,10 @@
   </ol>
 
   <p>
-    Activation is the only time AUK talks to a server. After it succeeds, your licence is
+    Activation is the only time AUK sends us anything. After it succeeds, your licence is
     verified entirely on your own Mac — offline, forever. Our servers going down cannot stop
-    you working.
+    you working. (AUK also checks GitHub for new versions when it launches; you can turn that
+    off in Settings.)
   </p>
 
   <h2>What you bought</h2>
@@ -157,21 +158,29 @@
 
   function show(key) {
     keyEl.textContent = key;
-    stateEl.textContent = "Saved to your email as well. Keep it somewhere safe.";
+    stateEl.textContent = "Copy this somewhere safe. You can always come back to this page from your Paddle receipt.";
     copyBtn.hidden = false;
     copyBtn.addEventListener("click", function () {
-      navigator.clipboard.writeText(key).then(
-        function () {
+      function manual() {
+        // navigator.clipboard is undefined outside a secure context and can be
+        // denied inside one. Either way the key itself is on screen and
+        // selectable, so the fallback is a sentence, never a broken button.
+        stateEl.textContent = "Select the key above and copy it manually.";
+      }
+      if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        manual();
+        return;
+      }
+      try {
+        navigator.clipboard.writeText(key).then(function () {
           copyBtn.textContent = "Copied";
           setTimeout(function () {
             copyBtn.textContent = "Copy";
           }, 2000);
-        },
-        function () {
-          // Clipboard access can be denied; the key is selectable regardless.
-          stateEl.textContent = "Select the key above and copy it manually.";
-        },
-      );
+        }, manual);
+      } catch (err) {
+        manual();
+      }
     });
   }
 
